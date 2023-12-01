@@ -39,7 +39,7 @@ contract ProducerContract {
         require(msg.sender == producerAddress, "Only producer can request certification");
         require(_productId < productCounter, "Invalid product ID");
 
-        products[_productId].isCertified = true;
+        inspectorContract.requestCertificationByProducer(_productId);
     }
 
     function listProductForSale(uint256 _productId) external {
