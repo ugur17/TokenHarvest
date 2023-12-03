@@ -10,6 +10,7 @@ error GoodExchange__ProducerNotFound();
 error GoodExchange__InvalidListingId();
 error GoodExchange__ProductAlreadySold();
 error GoodExchange__InsufficientFunds();
+error GoodExchange__InvalidListingPrice();
 
 contract GoodExchange {
     /* Type declarations */
@@ -37,6 +38,10 @@ contract GoodExchange {
         uint256 quantity,
         uint256 unitPrice
     ) external {
+        if (unitPrice <= 0) {
+            revert GoodExchange__InvalidListingPrice();
+        }
+
         for (uint256 i = 0; i < s_producerContracts.length; i++) {
             if (s_producerContracts[i].producerAddress() == msg.sender) {
                 if (s_producerContracts[i].products(_productId).isCertified == false) {
