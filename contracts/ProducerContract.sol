@@ -3,13 +3,14 @@ pragma solidity ^0.8.0;
 
 import "./Auth.sol";
 
-error ProducerContract__ProducerNotFound();
 error ProducerContract__ProductAlreadyExist();
 error ProducerContract__ProductDoesNotExist();
 error ProducerContract__ProductNotCertified();
 error ProducerContract__ProductAlreadyListed();
 error ProducerContract__InvalidListingQuantity();
 error ProducerContract__InvalidPrice();
+error ProducerContract__TotalShouldBeBiggerThanForSaleQuantity();
+error ProducerContract__ProductNotListed();
 
 contract ProducerContract is Auth {
     struct Product {
@@ -23,31 +24,24 @@ contract ProducerContract is Auth {
         uint256 unitPrice;
     }
 
-    // struct Producer {
-    //     string name,
-    //     mapping(uint256 => Product) public products
-    // }
-
-    // mapping(uint256 => Product) public products;
+    // producer address => product id => Product instance
     mapping(address => mapping(uint256 => Product)) public producersAndProducts;
+    // Product[] public listedProducts;
 
-    // modifier onlyOwnerOfProduct(uint256 id) {
-    //     require(producersAndProducts[msg.sender][id].owner)
-    // }
-
-    // NOTE: When i come back, i will add modifier to check if the msg.sender has the product which has the id param
-    // To do that, most probably i will need a new type of storage to store products
+    modifier onlyCreatedProduct(uint256 id) {
+        if (producersAndProducts[msg.sender][id].owner == address(0)) {
+            revert ProducerContract__ProductDoesNotExist();
+        }
+        _;
+    }
 
     function createProduct(
         string memory name,
         uint256 id,
         uint256 noOfTokensTotal,
         uint256 productAmountOfEachToken
-    ) external onlyRole(UserRole.Producer) returns (Product memory) {
-        if (bytes(users[msg.sender].username).length == 0) {
-            revert ProducerContract__ProducerNotFound();
-        }
-        if (bytes(producersAndProducts[msg.sender][id].name).length > 0) {
+    ) external onlyRole(UserRole.Producer) onlyRegistered returns (Product memory) {
+        if (producersAndProducts[msg.sender][id].owner != address(0)) {
             revert ProducerContract__ProductAlreadyExist();
         }
         Product memory newProduct = Product(
@@ -64,10 +58,31 @@ contract ProducerContract is Auth {
         return newProduct;
     }
 
-    function removeProduct(uint256 id) external onlyRole(UserRole.Producer) {
-        if (bytes(users[msg.sender].username).length == 0) {
-            revert ProducerContract__ProducerNotFound();
+    function updateProduct(
+        string memory name,
+        uint256 id,
+        uint256 noOfTokensTotal,
+        uint256 productAmountOfEachToken
+    )
+        external
+        onlyRole(UserRole.Producer)
+        onlyRegistered
+        onlyCreatedProduct(id)
+        returns (Product memory)
+    {
+        Product storage currentProduct = producersAndProducts[msg.sender][id];
+        if (noOfTokensTotal < currentProduct.noOfTokensForSale) {
+            revert ProducerContract__TotalShouldBeBiggerThanForSaleQuantity();
         }
+        currentProduct.name = name;
+        currentProduct.noOfTokensTotal = noOfTokensTotal;
+        currentProduct.productAmountOfEachToken = productAmountOfEachToken;
+        return currentProduct;
+    }
+
+    function removeProduct(
+        uint256 id
+    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
         delete producersAndProducts[msg.sender][id];
     }
 
@@ -75,14 +90,8 @@ contract ProducerContract is Auth {
         uint256 id,
         uint256 noOfTokensForSale,
         uint256 unitPrice
-    ) external onlyRole(UserRole.Producer) returns (Product memory) {
-        if (bytes(users[msg.sender].username).length == 0) {
-            revert ProducerContract__ProducerNotFound();
-        }
+    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
         Product storage currentProduct = producersAndProducts[msg.sender][id];
-        if (bytes(currentProduct.name).length == 0) {
-            revert ProducerContract__ProductDoesNotExist();
-        }
         if (currentProduct.isCertified == false) {
             revert ProducerContract__ProductNotCertified();
         }
@@ -97,16 +106,37 @@ contract ProducerContract is Auth {
         }
         currentProduct.noOfTokensForSale = noOfTokensForSale;
         currentProduct.unitPrice = unitPrice;
-        return currentProduct;
     }
 
-    // function cancelListing(uint256 id) external {
+    function cancelListing(
+        uint256 id
+    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+        Product storage currentProduct = producersAndProducts[msg.sender][id];
+        if (currentProduct.noOfTokensForSale <= 0) {
+            revert ProducerContract__ProductNotListed();
+        }
+        currentProduct.noOfTokensForSale = 0;
+        currentProduct.unitPrice = 0;
+    }
 
-    // }
-
-    // function updateProductForSale(uint256 id, uint256 noOfTokensForSale, uint256 unitPrice) external returns(Product) {
-
-    // }
+    function updateListing(
+        uint256 id,
+        uint256 noOfTokensForSale,
+        uint256 unitPrice
+    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+        Product storage currentProduct = producersAndProducts[msg.sender][id];
+        if (currentProduct.noOfTokensForSale <= 0) {
+            revert ProducerContract__ProductNotListed();
+        }
+        if (noOfTokensForSale <= 0) {
+            revert ProducerContract__InvalidListingQuantity();
+        }
+        if (unitPrice <= 0) {
+            revert ProducerContract__InvalidPrice();
+        }
+        currentProduct.noOfTokensForSale = noOfTokensForSale;
+        currentProduct.unitPrice = unitPrice;
+    }
 
     // function requestCertification(uint256 _productId) external {
     //     require(msg.sender == producerAddress, "Only producer can request certification");

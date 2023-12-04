@@ -13,6 +13,16 @@ error GoodExchange__InsufficientFunds();
 error GoodExchange__InvalidListingPrice();
 
 contract GoodExchange {
+
+    // While writing purchase function, don't forget to check if the amount of tokens which the customer trying
+    // to buy is bigger then the total amount of token. After purchase, if left amount is zero, then delete the product.
+
+
+
+
+
+
+
     /* Type declarations */
     struct Listing {
         address producer;
@@ -38,6 +48,8 @@ contract GoodExchange {
         uint256 quantity,
         uint256 unitPrice
     ) external {
+        Producer storage currentProducer = 
+        Product storage currentProduct = 
         if (unitPrice <= 0) {
             revert GoodExchange__InvalidListingPrice();
         }
