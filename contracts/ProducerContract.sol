@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
+
+/*
+    This is the old implementation approach.
+    Everything works fine in this contract, but instead of using
+    struct type to define products, i choosed to use ERC1155
+    nft standard. I will keep it here, until complete the whole project,
+    just in case if i need these functionalities.
+*/
 
 import "./Auth.sol";
 
@@ -40,7 +48,7 @@ contract ProducerContract is Auth {
         uint256 id,
         uint256 noOfTokensTotal,
         uint256 productAmountOfEachToken
-    ) external onlyRole(UserRole.Producer) onlyRegistered returns (Product memory) {
+    ) external onlyRole(UserRole.Producer) returns (Product memory) {
         if (producersAndProducts[msg.sender][id].owner != address(0)) {
             revert ProducerContract__ProductAlreadyExist();
         }
@@ -63,13 +71,7 @@ contract ProducerContract is Auth {
         uint256 id,
         uint256 noOfTokensTotal,
         uint256 productAmountOfEachToken
-    )
-        external
-        onlyRole(UserRole.Producer)
-        onlyRegistered
-        onlyCreatedProduct(id)
-        returns (Product memory)
-    {
+    ) external onlyRole(UserRole.Producer) onlyCreatedProduct(id) returns (Product memory) {
         Product storage currentProduct = producersAndProducts[msg.sender][id];
         if (noOfTokensTotal < currentProduct.noOfTokensForSale) {
             revert ProducerContract__TotalShouldBeBiggerThanForSaleQuantity();
@@ -80,9 +82,7 @@ contract ProducerContract is Auth {
         return currentProduct;
     }
 
-    function removeProduct(
-        uint256 id
-    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+    function removeProduct(uint256 id) external onlyRole(UserRole.Producer) onlyCreatedProduct(id) {
         delete producersAndProducts[msg.sender][id];
     }
 
@@ -90,7 +90,7 @@ contract ProducerContract is Auth {
         uint256 id,
         uint256 noOfTokensForSale,
         uint256 unitPrice
-    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+    ) external onlyRole(UserRole.Producer) onlyCreatedProduct(id) {
         Product storage currentProduct = producersAndProducts[msg.sender][id];
         if (currentProduct.isCertified == false) {
             revert ProducerContract__ProductNotCertified();
@@ -108,9 +108,7 @@ contract ProducerContract is Auth {
         currentProduct.unitPrice = unitPrice;
     }
 
-    function cancelListing(
-        uint256 id
-    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+    function cancelListing(uint256 id) external onlyRole(UserRole.Producer) onlyCreatedProduct(id) {
         Product storage currentProduct = producersAndProducts[msg.sender][id];
         if (currentProduct.noOfTokensForSale <= 0) {
             revert ProducerContract__ProductNotListed();
@@ -123,7 +121,7 @@ contract ProducerContract is Auth {
         uint256 id,
         uint256 noOfTokensForSale,
         uint256 unitPrice
-    ) external onlyRole(UserRole.Producer) onlyRegistered onlyCreatedProduct(id) {
+    ) external onlyRole(UserRole.Producer) onlyCreatedProduct(id) {
         Product storage currentProduct = producersAndProducts[msg.sender][id];
         if (currentProduct.noOfTokensForSale <= 0) {
             revert ProducerContract__ProductNotListed();

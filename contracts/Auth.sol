@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 contract Auth {
     enum UserRole {
@@ -27,6 +27,7 @@ contract Auth {
     }
 
     modifier onlyRole(UserRole _role) {
+        require(users[msg.sender].registered, "User not registered");
         require(users[msg.sender].role == _role, "Insufficient role");
         _;
     }

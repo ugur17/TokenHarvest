@@ -13,6 +13,7 @@
     "@typechain/hardhat": "^9.0.0",
     "@types/chai": "^4.2.0",
     "@types/mocha": ">=9.1.0",
+    "base64-sol": "^1.1.0",
     "chai": "^4.3.10",
     "dotenv": "^16.3.1",
     "ethereum-waffle": "^4.0.10",
