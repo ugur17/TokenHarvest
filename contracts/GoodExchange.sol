@@ -7,12 +7,14 @@ pragma solidity ^0.8.0;
 import "./TokenHarvest.sol";
 
 /* Errors */
-error GoodExchange__ProductNotCertified();
-error GoodExchange__InvalidListingId();
-error GoodExchange__ProductAlreadySold();
+// error GoodExchange__ProductNotCertified();
 error GoodExchange__InsufficientFunds();
 error GoodExchange__InvalidListingPrice();
 error GoodExchange__AlreadyListed();
+error GoodExchange__ProductNotListed();
+error GoodExchange__NotEnoughSupplyForSale();
+error GoodExchange__InvalidAmount();
+error GoodExchange__ZeroIsIdOfFungibleToken();
 
 contract GoodExchange is TokenHarvest {
     //     // While writing purchase function, don't forget to check if the amount of tokens which the customer trying
@@ -32,9 +34,37 @@ contract GoodExchange is TokenHarvest {
     //     event ProductListed(uint256 indexed productId, address indexed producer, uint256 price);
     //     event ProductPurchased(uint256 indexed productId, address indexed buyer, uint256 price);
 
-    modifier notListed(address account, uint256 tokenId) {
+    modifier alreadyListed(address account, uint256 tokenId) {
         if (listingByProducer[account][tokenId].amount > 0) {
             revert GoodExchange__AlreadyListed();
+        }
+        _;
+    }
+
+    modifier notListed(address account, uint256 tokenId) {
+        if (listingByProducer[account][tokenId].producer == address(0)) {
+            revert GoodExchange__ProductNotListed();
+        }
+        _;
+    }
+
+    modifier invalidPrice(uint256 price) {
+        if (price <= 0) {
+            revert GoodExchange__InvalidListingPrice();
+        }
+        _;
+    }
+
+    modifier invalidAmount(uint256 amount) {
+        if (amount <= 0) {
+            revert GoodExchange__InvalidAmount();
+        }
+        _;
+    }
+
+    modifier onlyNft(uint256 tokenId) {
+        if (tokenId == 0) {
+            revert GoodExchange__ZeroIsIdOfFungibleToken();
         }
         _;
     }
@@ -51,47 +81,77 @@ contract GoodExchange is TokenHarvest {
         uint256 tokenId,
         uint256 amount,
         uint256 unitPrice
-    ) external onlyOwnerHasEnoughToken(msg.sender, tokenId, amount) notListed(msg.sender, tokenId) {
-        if (unitPrice <= 0) {
-            revert GoodExchange__InvalidListingPrice();
-        }
-        // will be continued...
+    )
+        external
+        onlyNft(tokenId)
+        invalidPrice(unitPrice)
+        invalidAmount(amount)
+        onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
+        alreadyListed(msg.sender, tokenId)
+    {
+        // check if it is certified
+        // check for approval
+        listingByProducer[msg.sender][tokenId] = Listing(msg.sender, amount, unitPrice);
+        // Emit the event
     }
 
-    //     /**
-    //      *
-    //      * @param listingIndex
-    //      */
-    //     function purchaseProduct(uint256 listingIndex) external payable {
-    //         if (listingIndex > productListingByProducer[msg.sender].length) {
-    //             revert GoodExchange__InvalidListingId();
-    //         }
-    //         ProductListing storage listing = productListingByProducer[msg.sender][listingIndex];
-    //         if (listing.isSold) {
-    //             revert GoodExchange__ProductAlreadySold();
-    //         }
-    //         if (msg.value < listing.price) {
-    //             revert GoodExchange__InsufficientFunds();
-    //         }
+    function cancelListing(
+        uint256 tokenId
+    )
+        external
+        onlyNft(tokenId)
+        notListed(msg.sender, tokenId)
+        onlyOwnerHasEnoughToken(msg.sender, tokenId, listingByProducer[msg.sender][tokenId].amount)
+    {
+        delete listingByProducer[msg.sender][tokenId];
+        // emit the event
+    }
 
-    //         listing.isSold = true;
-    //         payable(listing.producer).transfer(listing.price);
+    function updateListing(
+        uint256 tokenId,
+        uint256 amount,
+        uint256 unitPrice
+    )
+        external
+        onlyNft(tokenId)
+        invalidPrice(unitPrice)
+        invalidAmount(amount)
+        notListed(msg.sender, tokenId)
+        onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
+    {
+        listingByProducer[msg.sender][tokenId].amount = amount;
+        listingByProducer[msg.sender][tokenId].unitPrice = unitPrice;
+        // emit the event
+    }
 
-    //         emit ProductPurchased(listing.productId, msg.sender, listing.price);
-    //     }
+    function purchaseProduct(
+        address producer,
+        uint256 tokenId,
+        uint256 amount
+    ) external onlyNft(tokenId) invalidAmount(amount) notListed(producer, tokenId) {
+        Listing memory listing = listingByProducer[producer][tokenId];
+        if (listing.amount < amount) {
+            revert GoodExchange__NotEnoughSupplyForSale();
+        }
+        uint256 totalPrice = listing.amount * listing.unitPrice;
+        if (balanceOf(msg.sender, getIdOfFungibleToken()) < totalPrice) {
+            revert GoodExchange__InsufficientFunds();
+        }
+        // check for approval
+        safeTransferFrom(msg.sender, producer, getIdOfFungibleToken(), totalPrice, ""); // send hrv token to the nft owner
+        safeTransferFrom(producer, msg.sender, tokenId, amount, ""); // send nft to the account who send money as hrv token
+        if (listing.amount == amount) {
+            delete listingByProducer[producer][tokenId];
+        } else {
+            listingByProducer[producer][tokenId].amount -= amount;
+        }
+        // emit the event
+    }
 
-    //     function getProducerContract(uint256 index) external view returns (ProducerContract) {
-    //         return s_producerContracts[index];
-    //     }
-
-    //     function getProductListingByProducer(
-    //         address producer,
-    //         uint256 index
-    //     ) public view returns (ProductListing) {
-    //         return productListingByProducer[producer][index];
-    //     }
-
-    //     function getProductListingsCountByProducer(address _producer) external view returns (uint256) {
-    //         return productListingByProducer[_producer].length;
-    //     }
+    function getListing(
+        address producer,
+        uint256 tokenId
+    ) external view notListed(producer, tokenId) returns (Listing memory) {
+        return listingByProducer[producer][tokenId];
+    }
 }

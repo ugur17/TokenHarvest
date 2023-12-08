@@ -23,10 +23,10 @@ contract TokenHarvest is ERC1155, Ownable, Auth {
     /* Non-Fungible Token State Variables */
     uint256 private s_nftCounter;
     string private constant BASE_URI = "data:application/json;base64,";
-    mapping(uint256 => string) private s_nftURIs; // id => uri
+    // mapping(uint256 => string) private s_nftURIs; // id => uri
     mapping(uint256 => NftMetadata) private s_nftMetadatas; // id => NftMetadata
 
-    mapping(uint256 => uint256) private s_nftTotalSupply; // id => total supply
+    // mapping(uint256 => uint256) private s_nftTotalSupply; // id => total supply
 
     /* Fungible Token State Variables */
     string private constant NAME_OF_FUNGIBLE_TOKEN = "HarvestToken";
@@ -92,8 +92,8 @@ contract TokenHarvest is ERC1155, Ownable, Auth {
         _mint(msg.sender, tokenId, amount, "");
         NftMetadata memory newToken = NftMetadata(name, productAmountOfEachToken, false);
         s_nftMetadatas[tokenId] = newToken;
-        s_nftURIs[tokenId] = uri(tokenId);
-        s_nftTotalSupply[tokenId] = s_nftTotalSupply[tokenId] + amount;
+        // s_nftURIs[tokenId] = uri(tokenId);
+        // s_nftTotalSupply[tokenId] = s_nftTotalSupply[tokenId] + amount;
         emit CreatedNFT(tokenId, amount, name, productAmountOfEachToken);
     }
 
@@ -109,11 +109,15 @@ contract TokenHarvest is ERC1155, Ownable, Auth {
         uint256 tokenId,
         uint256 amount
     ) external onlyRole(UserRole.Producer) onlyOwnerHasEnoughToken(msg.sender, tokenId, amount) {
-        if (amount > s_nftTotalSupply[tokenId]) {
-            revert TokenHarvest__NotEnoguhSupply();
-        }
+        // if (amount > s_nftTotalSupply[tokenId]) {
+        //     revert TokenHarvest__NotEnoguhSupply();
+        // }
         _burn(msg.sender, tokenId, amount);
-        s_nftTotalSupply[tokenId] = s_nftTotalSupply[tokenId] - amount;
+        // s_nftTotalSupply[tokenId] = s_nftTotalSupply[tokenId] - amount;
+    }
+
+    function getIdOfFungibleToken() public view returns (uint256) {
+        return ID_OF_FUNGIBLE_TOKEN;
     }
 
     // function updateNftMetadata(
@@ -153,24 +157,6 @@ contract TokenHarvest is ERC1155, Ownable, Auth {
 
     // function totalSupply(uint256 tokenId) external view returns (uint256) {
     //     return s_nftTotalSupply[tokenId];
-    // }
-
-    // function sell(
-    //     uint256 tokenId,
-    //     uint256 amount,
-    //     uint256 price
-    // ) external onlyRole(UserRole.Producer) {
-    //     require(balanceOf(msg.sender, tokenId) >= amount, "Insufficient balance");
-    //     _approveForAll(msg.sender, address(this), true);
-    //     s_NftMetadatas[tokenId].price = price;
-    // }
-
-    // function buy(address account, uint256 tokenId, uint256 amount) external payable {
-    //     require(s_nftMetadatas[tokenId].price > 0, "Token not for sale");
-    //     require(msg.value == s_nftMetadatas[tokenId].price * amount, "Incorrect payment amount");
-
-    //     _transferFrom(account, msg.sender, tokenId, amount);
-    //     payable(account).transfer(msg.value);
     // }
 
     // function withdraw() external onlyRole(UserRole.Producer) {
