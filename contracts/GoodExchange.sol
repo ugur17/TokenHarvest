@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-// import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
-
-// import "./ProducerContract.sol";
 import "./TokenHarvest.sol";
 
 /* Errors */
-// error GoodExchange__ProductNotCertified();
+error GoodExchange__ProductNotCertified();
 error GoodExchange__InsufficientFunds();
 error GoodExchange__InvalidListingPrice();
 error GoodExchange__AlreadyListed();
@@ -17,9 +14,6 @@ error GoodExchange__InvalidAmount();
 error GoodExchange__ZeroIsIdOfFungibleToken();
 
 contract GoodExchange is TokenHarvest {
-    //     // While writing purchase function, don't forget to check if the amount of tokens which the customer trying
-    //     // to buy is bigger then the total amount of token. After purchase, if left amount is zero, then delete the product.
-
     /* Type declarations */
     struct Listing {
         address producer;
@@ -30,10 +24,31 @@ contract GoodExchange is TokenHarvest {
     /* State variables */
     mapping(address => mapping(uint256 => Listing)) private listingByProducer; // producer => token id => Listing
 
-    //     /* Events */
-    //     event ProductListed(uint256 indexed productId, address indexed producer, uint256 price);
-    //     event ProductPurchased(uint256 indexed productId, address indexed buyer, uint256 price);
+    /* Events */
+    event ProductListed(
+        uint256 indexed tokenId,
+        address indexed producer,
+        uint256 amount,
+        uint256 unitPrice
+    );
 
+    event ListingCancelled(uint256 indexed tokenId, address indexed producer);
+
+    event ListingUpdated(
+        uint256 indexed tokenId,
+        address indexed producer,
+        uint256 amount,
+        uint256 unitPrice
+    );
+
+    event ProductPurchased(
+        uint256 indexed tokenId,
+        address indexed buyer,
+        uint256 amount,
+        uint256 unitPrice
+    );
+
+    /* Modifiers */
     modifier alreadyListed(address account, uint256 tokenId) {
         if (listingByProducer[account][tokenId].amount > 0) {
             revert GoodExchange__AlreadyListed();
@@ -62,14 +77,16 @@ contract GoodExchange is TokenHarvest {
         _;
     }
 
-    modifier onlyNft(uint256 tokenId) {
-        if (tokenId == 0) {
-            revert GoodExchange__ZeroIsIdOfFungibleToken();
+    modifier onlyCertified(uint256 tokenId) {
+        if (s_nftMetadatas[tokenId].isCertified == false) {
+            revert GoodExchange__ProductNotCertified();
         }
         _;
     }
 
-    constructor() TokenHarvest(msg.sender) {}
+    // constructor() TokenHarvest(msg.sender) {}
+
+    /* Functions */
 
     /**
      * @dev This is the function to make any product open to sell
@@ -88,11 +105,11 @@ contract GoodExchange is TokenHarvest {
         invalidAmount(amount)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
         alreadyListed(msg.sender, tokenId)
+        onlyCertified(tokenId)
     {
-        // check if it is certified
         // check for approval
         listingByProducer[msg.sender][tokenId] = Listing(msg.sender, amount, unitPrice);
-        // Emit the event
+        emit ProductListed(tokenId, msg.sender, amount, unitPrice);
     }
 
     function cancelListing(
@@ -104,7 +121,7 @@ contract GoodExchange is TokenHarvest {
         onlyOwnerHasEnoughToken(msg.sender, tokenId, listingByProducer[msg.sender][tokenId].amount)
     {
         delete listingByProducer[msg.sender][tokenId];
-        // emit the event
+        emit ListingCancelled(tokenId, msg.sender);
     }
 
     function updateListing(
@@ -121,7 +138,7 @@ contract GoodExchange is TokenHarvest {
     {
         listingByProducer[msg.sender][tokenId].amount = amount;
         listingByProducer[msg.sender][tokenId].unitPrice = unitPrice;
-        // emit the event
+        emit ListingUpdated(tokenId, msg.sender, amount, unitPrice);
     }
 
     function purchaseProduct(
@@ -145,9 +162,10 @@ contract GoodExchange is TokenHarvest {
         } else {
             listingByProducer[producer][tokenId].amount -= amount;
         }
-        // emit the event
+        emit ProductPurchased(tokenId, msg.sender, amount, listing.unitPrice);
     }
 
+    /* Getter Functions */
     function getListing(
         address producer,
         uint256 tokenId

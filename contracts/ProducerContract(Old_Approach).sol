@@ -20,7 +20,7 @@ error ProducerContract__InvalidPrice();
 error ProducerContract__TotalShouldBeBiggerThanForSaleQuantity();
 error ProducerContract__ProductNotListed();
 
-contract ProducerContract is Auth {
+contract OldProducerContract is Auth {
     struct Product {
         address owner;
         string name;

@@ -1,56 +1,76 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+error Auth__InvalidNameOrEmail();
+error Auth__AlreadyRegistered();
+error Auth__UserNotRegistered();
+error Auth__InsufficientRole();
+
 contract Auth {
+    /* Type Declarations */
     enum UserRole {
         Producer,
         Inspector,
         Customer
     }
-
     struct User {
         string username;
-        bytes32 ipfsHash; // IPFS hash for sensitive data like location and phone number
+        string email;
         bool registered;
         UserRole role;
     }
-
+    /* State Variables */
     mapping(address => User) public users;
 
-    event UserRegistered(address userAddress, string username, bytes32 ipfsHash, UserRole role);
-    // event UserLoggedIn(address userAddress, string username, UserRole role);
-    // event UserLoggedOut(address userAddress);
+    /* Events */
+    event UserRegistered(
+        address indexed userAddress,
+        string username,
+        string indexed email,
+        UserRole indexed role
+    );
 
+    /* Modifiers */
     modifier onlyRegistered() {
-        require(users[msg.sender].registered, "User not registered");
+        if (users[msg.sender].registered == false) {
+            revert Auth__UserNotRegistered();
+        }
         _;
     }
 
     modifier onlyRole(UserRole _role) {
-        require(users[msg.sender].registered, "User not registered");
-        require(users[msg.sender].role == _role, "Insufficient role");
+        if (users[msg.sender].registered == false) {
+            revert Auth__UserNotRegistered();
+        }
+        if (users[msg.sender].role != _role) {
+            revert Auth__InsufficientRole();
+        }
         _;
     }
 
-    function register(string memory _username, bytes32 _ipfsHash, UserRole _role) external {
-        require(!users[msg.sender].registered, "User already registered");
+    modifier onlyValidNameAndEmail(string memory name, string memory email) {
+        if (bytes(name).length == 0 || bytes(email).length == 0) {
+            revert Auth__InvalidNameOrEmail();
+        }
+        _;
+    }
 
-        users[msg.sender] = User(_username, _ipfsHash, true, _role);
-        emit UserRegistered(msg.sender, _username, _ipfsHash, _role);
+    /* Functions */
+    function register(
+        string memory _username,
+        string memory email,
+        UserRole _role
+    ) external onlyValidNameAndEmail(_username, email) {
+        if (users[msg.sender].registered) {
+            revert Auth__AlreadyRegistered();
+        }
+        users[msg.sender] = User(_username, email, true, _role);
+        emit UserRegistered(msg.sender, _username, email, _role);
     }
 
     function checkRole(address currentUser) external view returns (UserRole) {
         return users[currentUser].role;
     }
-
-    // function login() external onlyRegistered returns (string memory, UserRole) {
-    //     UserInfo storage currentUser = users[msg.sender];
-    //     emit UserLoggedIn(msg.sender, currentUser.username, currentUser.role);
-    //     return (currentUser.username, currentUser.role);
-    // }
-
-    // function logout() external onlyRegistered {
-    //     delete users[msg.sender];
-    //     emit UserLoggedOut(msg.sender);
-    // }
 }

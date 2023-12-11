@@ -1,49 +1,45 @@
-// // SPDX-License-Identifier: MIT
-// pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-// import "./ProducerContract.sol";
+import "./ProducerContract.sol";
 
-// contract InspectorContract is ProducerContract {
+/* Errors */
+error InspectorContract__InspectionRequestNotFound();
+error InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
 
-    // ProducerContract public producerContract; 
-    // address public inspectorAddress;
+contract InspectorContract is ProducerContract {
+    /* Events */
+    event RequestAccepted(uint256 indexed tokenId, address indexed inspector);
+    event CertificationApproved(uint256 indexed tokenId, address indexed inspector);
 
-    // struct CertificationRequest {
-    //     uint256 productId;
-    //     address producer;
-    //     bool isApproved;
-    // }
+    /* Modifiers */
+    modifier onlySentRequests(uint256 tokenId) {
+        if (certificationRequests[tokenId].producer == address(0)) {
+            revert InspectorContract__InspectionRequestNotFound();
+        }
+        _;
+    }
 
-    // CertificationRequest[] public certificationRequests;
+    modifier onlyAcceptedRequests(uint256 tokenId) {
+        if (certificationRequests[tokenId].inspector != msg.sender) {
+            revert InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
+        }
+        _;
+    }
 
-    // mapping(uint256 => bool) public certifiedProducts;
+    /* Functions */
+    function acceptRequest(
+        uint256 tokenId
+    ) external onlyRole(UserRole.Inspector) onlySentRequests(tokenId) {
+        certificationRequests[tokenId].inspector = msg.sender;
+        emit RequestAccepted(tokenId, msg.sender);
+    }
 
-    // constructor(ProducerContract _producerContract) {
-    //     inspectorAddress = msg.sender;
-    //     producerContract = _producerContract;
-    // }
-
-    // function getCertificationRequestsCount() external view returns (uint256) {
-    //     return certificationRequests.length;
-    // }
-
-    // function requestCertification(uint256 _productId) external {
-    //     require(
-    //         msg.sender == producerContract.producerAddress(),
-    //         "Only producer can request certification"
-    //     );
-    //     require(_productId < producerContract.productCounter(), "Invalid product ID");
-
-    //     certificationRequests.push(CertificationRequest(_productId, msg.sender, false));
-    // }
-
-    // function approveCertification(uint256 _requestId) external {
-    //     require(msg.sender == inspectorAddress, "Only inspector can approve certification");
-    //     require(_requestId < certificationRequests.length, "Invalid request ID");
-
-    //     CertificationRequest storage request = certificationRequests[_requestId];
-    //     request.isApproved = true;
-    //     certifiedProducts[request.productId] = true;
-    //     producerContract.products(request.productId).isCertified = true;
-    // }
-// }
+    function approveCertification(
+        uint256 tokenId
+    ) external onlyRole(UserRole.Inspector) onlyAcceptedRequests(tokenId) {
+        delete certificationRequests[tokenId];
+        s_nftMetadatas[tokenId].isCertified = true;
+        emit CertificationApproved(tokenId, msg.sender);
+    }
+}
