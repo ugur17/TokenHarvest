@@ -11,6 +11,7 @@ contract InspectorContract is ProducerContract {
     /* Events */
     event RequestAccepted(uint256 indexed tokenId, address indexed inspector);
     event CertificationApproved(uint256 indexed tokenId, address indexed inspector);
+    event CertificationRejected(uint256 indexed tokenId, address indexed inspector);
 
     /* Modifiers */
     modifier onlySentRequests(uint256 tokenId) {
@@ -41,5 +42,12 @@ contract InspectorContract is ProducerContract {
         delete certificationRequests[tokenId];
         s_nftMetadatas[tokenId].isCertified = true;
         emit CertificationApproved(tokenId, msg.sender);
+    }
+
+    function rejectCertification(
+        uint256 tokenId
+    ) external onlyRole(UserRole.Producer) onlyAcceptedRequests(tokenId) {
+        delete certificationRequests[tokenId];
+        emit CertificationRejected(tokenId, msg.sender);
     }
 }

@@ -8,7 +8,7 @@ error Auth__AlreadyRegistered();
 error Auth__UserNotRegistered();
 error Auth__InsufficientRole();
 
-contract Auth {
+contract Auth is Ownable {
     /* Type Declarations */
     enum UserRole {
         Producer,
@@ -56,6 +56,8 @@ contract Auth {
         }
         _;
     }
+
+    constructor() Ownable(msg.sender) {}
 
     /* Functions */
     function register(

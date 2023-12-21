@@ -12,9 +12,14 @@ contract ProducerContract is TokenHarvest {
         address producer;
         address inspector;
     }
-    mapping(uint256 => CertificationRequest) certificationRequests; // token id => CertificationRequest instance
+    // token id => CertificationRequest instance
+    mapping(uint256 => CertificationRequest) public certificationRequests;
+    // (producer address => (protocol id => requested or not)) to store which producer requested which protocol (protocols storing off-chain)
+    mapping(address => mapping(uint256 => bool)) public requestedProtocolsByProducers;
+    uint256 public deneme = 0;
 
     event CertificationRequested(uint256 indexed tokenId, address indexed producer);
+    event ProtocolRequested(uint256 indexed protocolId, address indexed producer);
 
     modifier onlyNotCertifiedOrNotRequested(uint256 tokenId) {
         NftMetadata memory nft = getNftMetadata(tokenId);
@@ -39,5 +44,10 @@ contract ProducerContract is TokenHarvest {
         newRequest.producer = msg.sender;
         certificationRequests[tokenId] = newRequest;
         emit CertificationRequested(tokenId, msg.sender);
+    }
+
+    function requestProtocolWithDao(uint256 protocolId) external onlyRole(UserRole.Producer) {
+        requestedProtocolsByProducers[msg.sender][protocolId] = true;
+        emit ProtocolRequested(protocolId, msg.sender);
     }
 }
