@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import "./InspectorContract.sol";
 
 error OperationCenter__ThisProtocolNotRequestedByThisProducer();
@@ -12,6 +14,8 @@ error OperationCenter__ProposalAlreadyExecuted();
 error OperationCenter__ProposalDidntPass();
 error OperationCenter__NothingToWithdraw();
 error OperationCenter__FailedToWithdrawEthers();
+error OperationCenter__NotSufficientBalance();
+error OperationCenter__InvalidProducerAddress();
 
 contract OperationCenter is InspectorContract {
     // Struct named Proposal containing all relevant information
@@ -27,6 +31,9 @@ contract OperationCenter is InspectorContract {
         mapping(address => bool) voters;
     }
 
+    IERC20 harvestToken;
+
+    mapping(address => uint256) public creditedTokens;
     // mapping of inspectors to identify which inspector is a dao member
     mapping(address => bool) private daoMemberInspectors;
     // list of proposals from index to Proposal instance
@@ -37,6 +44,7 @@ contract OperationCenter is InspectorContract {
     event NewProposal(uint256 indexed id, string description);
     event Vote(uint256 indexed id, bool vote, address indexed voter);
     event ProposalExecuted(uint256 indexed id);
+    event TokenTransferred(IERC20 token, address to, uint256 amount);
 
     modifier onlyRequestedProtocolByProducer(address producer, uint256 protocolId) {
         if (!requestedProtocolsByProducers[producer][protocolId]) {
@@ -76,8 +84,24 @@ contract OperationCenter is InspectorContract {
         _;
     }
 
-    constructor() {
+    modifier onlySufficientBalance(uint256 amount) {
+        if (getBalance() < amount) {
+            revert OperationCenter__NotSufficientBalance();
+        }
+        _;
+    }
+
+    constructor(address tokenAddress) {
         proposalCounter = 0;
+        harvestToken = IERC20(tokenAddress);
+    }
+
+    function beMemberOfDao() external onlyRole(UserRole.Inspector) {
+        daoMemberInspectors[msg.sender] = true;
+    }
+
+    function removeFromMembershipOfDao(address inspectorToBeRemoved) external onlyOwner {
+        daoMemberInspectors[inspectorToBeRemoved] = false;
     }
 
     function createProposal(
@@ -89,6 +113,9 @@ contract OperationCenter is InspectorContract {
         onlyMemberInspector(msg.sender)
         onlyRequestedProtocolByProducer(producer, protocolId)
     {
+        if (producer == address(0)) {
+            revert OperationCenter__InvalidProducerAddress();
+        }
         uint256 deadline = block.timestamp + 5 minutes;
         Proposal storage newPropose = proposals[proposalCounter];
         newPropose.proposalId = proposalCounter;
@@ -117,10 +144,12 @@ contract OperationCenter is InspectorContract {
         } else {
             proposals[proposalIndex].againstVotes++;
         }
+        emit Vote(proposalIndex, voteDecision, msg.sender);
     }
 
     function executeProposal(
-        uint256 proposalIndex
+        uint256 proposalIndex,
+        uint256 creditAmount
     ) external onlyMemberInspector(msg.sender) onlyExpiredAndNotExecutedProposals(proposalIndex) {
         address producer = proposals[proposalIndex].producer;
         uint256 protocolId = proposals[proposalIndex].protocolId;
@@ -129,11 +158,30 @@ contract OperationCenter is InspectorContract {
         if (proposals[proposalIndex].forVotes > proposals[proposalIndex].againstVotes) {
             proposals[proposalIndex].executed = true;
             // send some credit token to the producer
-            // assign an inspector to inspect the farm
+            creditHarvestToken(creditAmount, producer);
+            // request an inspector to inspect the farm
+            requestProcessInspector(producer, protocolId);
             // to assign an inspector, take some commitment to the treasury as guarantor then give them authority to inspect
         } else {
             revert OperationCenter__ProposalDidntPass();
         }
+        emit ProposalExecuted(proposalIndex);
+    }
+
+    function creditHarvestToken(
+        uint256 amount,
+        address producer
+    ) private onlySufficientBalance(amount) {
+        creditedTokens[producer] = amount;
+        harvestToken.transferFrom(address(this), producer, amount);
+
+        emit TokenTransferred(harvestToken, producer, amount);
+    }
+
+    function withdrawHarvestToken(uint256 amount) external onlyOwner onlySufficientBalance(amount) {
+        harvestToken.transferFrom(address(this), msg.sender, amount);
+
+        emit TokenTransferred(harvestToken, msg.sender, amount);
     }
 
     function withdrawEther() external onlyOwner {
@@ -151,11 +199,7 @@ contract OperationCenter is InspectorContract {
 
     fallback() external payable {}
 
-    function beMemberOfDao() external onlyRole(UserRole.Inspector) {
-        daoMemberInspectors[msg.sender] = true;
-    }
-
-    function removeFromMembershipOfDao(address inspectorToBeRemoved) external onlyOwner {
-        daoMemberInspectors[inspectorToBeRemoved] = false;
+    function getBalance() public view returns (uint256) {
+        return harvestToken.balanceOf(address(this));
     }
 }

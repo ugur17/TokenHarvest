@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./TokenHarvest.sol";
+import "./NFTHarvest.sol";
 
 /* Errors */
 error GoodExchange__ProductNotCertified();
@@ -13,7 +13,7 @@ error GoodExchange__NotEnoughSupplyForSale();
 error GoodExchange__InvalidAmount();
 error GoodExchange__ZeroIsIdOfFungibleToken();
 
-contract GoodExchange is TokenHarvest {
+contract GoodExchange is NFTHarvest {
     /* Type declarations */
     struct Listing {
         address producer;

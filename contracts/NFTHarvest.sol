@@ -17,7 +17,7 @@ error TokenHarvest__TokenDoesNotExist();
 error TokenHarvest__InvalidParameters();
 error TokenHarvest__ThisTokenIsNotNft();
 
-contract TokenHarvest is ERC1155, Auth {
+contract NFTHarvest is ERC1155, Auth {
     /* Type Declarations */
     struct NftMetadata {
         string name;
