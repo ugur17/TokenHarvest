@@ -7,7 +7,8 @@ import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "./ToString.sol";
 import "base64-sol/base64.sol";
 
-import "./Auth.sol";
+import "./ProducerContract.sol";
+import "./HarvestToken.sol";
 
 error TokenHarvest__NotOwner();
 error TokenHarvest__NotEnoguhSupply();
@@ -16,14 +17,17 @@ error TokenHarvest__NotEnoughToken();
 error TokenHarvest__TokenDoesNotExist();
 error TokenHarvest__InvalidParameters();
 error TokenHarvest__ThisTokenIsNotNft();
+error NFTHarvest__YouDidntAcceptAnyRequestWithThisTokenId();
 
-contract NFTHarvest is ERC1155, Auth {
+contract NFTHarvest is ERC1155, HarvestToken {
     /* Type Declarations */
     struct NftMetadata {
         string name;
         uint256 productAmountOfEachToken;
         bool isCertified;
     }
+
+    ProducerContract producerContract;
 
     /* Non-Fungible Token State Variables */
     uint256 private s_nftCounter;
@@ -87,7 +91,15 @@ contract NFTHarvest is ERC1155, Auth {
         _;
     }
 
-    constructor() ERC1155(BASE_URI) {
+    modifier onlyAcceptedCertificationRequestsByInspector(uint256 tokenId) {
+        if (producerContract.getInspectorOfCertificationRequest(tokenId) != msg.sender) {
+            revert NFTHarvest__YouDidntAcceptAnyRequestWithThisTokenId();
+        }
+        _;
+    }
+
+    constructor(address producerContractAddress) ERC1155(BASE_URI) {
+        producerContract = ProducerContract(producerContractAddress);
         s_nftCounter = 1; // NFT id counter starts from 1, because id of fungible token is 0
         s_hrvCurrentSupply = 0;
     }
@@ -160,6 +172,13 @@ contract NFTHarvest is ERC1155, Auth {
         emit BurnedNFT(msg.sender, tokenId, amount);
     }
 
+    // this function will be called from inspector contract
+    function certifyNft(
+        uint256 tokenId
+    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequestsByInspector(tokenId) {
+        s_nftMetadatas[tokenId].isCertified = true;
+    }
+
     /* Getter Functions */
     function getIdOfFungibleToken() public pure returns (uint256) {
         return ID_OF_FUNGIBLE_TOKEN;
@@ -183,5 +202,17 @@ contract NFTHarvest is ERC1155, Auth {
 
     function getCurrentHrvSupply() public view returns (uint256) {
         return s_hrvCurrentSupply;
+    }
+
+    function getNameMemberOfMetadata(uint256 tokenId) public view returns (string memory) {
+        return s_nftMetadatas[tokenId].name;
+    }
+
+    function getIsCertified(uint256 tokenId) public view returns (bool) {
+        return s_nftMetadatas[tokenId].isCertified;
+    }
+
+    function getBalanceOf(address owner, uint256 tokenId) public view returns (uint256) {
+        return balanceOf(owner, tokenId);
     }
 }

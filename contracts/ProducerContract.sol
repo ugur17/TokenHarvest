@@ -2,32 +2,33 @@
 pragma solidity ^0.8.0;
 
 import "./NFTHarvest.sol";
+import "./HarvestToken.sol";
 
 /* Errors */
 error ProducerContract__ProductAlreadyCertified();
 error ProducerContract__CertificationRequestAlreadySent();
+error ProducerContract__TokenDoesNotExist();
 
-contract ProducerContract is NFTHarvest {
+contract ProducerContract is HarvestToken {
     struct CertificationRequest {
         address producer;
         address inspector;
     }
-    // producer => protocol id => inspector requested or not
-    mapping(address => mapping(uint256 => bool)) internal processInspectorRequested;
-    // producer => protocol id => inspector
-    mapping(address => mapping(uint256 => address)) internal processInspectors;
+
+    NFTHarvest nftContract;
+
     // token id => CertificationRequest instance
     mapping(uint256 => CertificationRequest) public certificationRequests;
     // (producer address => (protocol id => requested or not)) to store which producer requested which protocol (protocols storing off-chain)
     mapping(address => mapping(uint256 => bool)) public requestedProtocolsByProducers;
-    uint256 public deneme = 0;
+    // producer => proposal index
+    mapping(address => uint256) public producerToAcceptedProposal;
 
     event CertificationRequested(uint256 indexed tokenId, address indexed producer);
     event ProtocolRequested(uint256 indexed protocolId, address indexed producer);
 
     modifier onlyNotCertifiedOrNotRequested(uint256 tokenId) {
-        NftMetadata memory nft = getNftMetadata(tokenId);
-        if (nft.isCertified == true) {
+        if (nftContract.getIsCertified(tokenId) == true) {
             revert ProducerContract__ProductAlreadyCertified();
         }
         if (certificationRequests[tokenId].producer != address(0)) {
@@ -36,12 +37,24 @@ contract ProducerContract is NFTHarvest {
         _;
     }
 
+    modifier onlyTokenExists(uint256 tokenId) {
+        string memory name = nftContract.getNameMemberOfMetadata(tokenId);
+        if (bytes(name).length == 0) {
+            revert ProducerContract__TokenDoesNotExist();
+        }
+        _;
+    }
+
+    constructor(address nftContractAddress) {
+        nftContract = NFTHarvest(nftContractAddress);
+    }
+
     function requestCertification(
         uint256 tokenId
     )
         external
         onlyRole(UserRole.Producer)
-        onlyExists(tokenId)
+        onlyTokenExists(tokenId)
         onlyNotCertifiedOrNotRequested(tokenId)
     {
         CertificationRequest memory newRequest;
@@ -50,13 +63,35 @@ contract ProducerContract is NFTHarvest {
         emit CertificationRequested(tokenId, msg.sender);
     }
 
-    function requestProtocolWithDao(uint256 protocolId) internal onlyRole(UserRole.Producer) {
+    function requestProtocolWithDao(uint256 protocolId) external onlyRole(UserRole.Producer) {
         requestedProtocolsByProducers[msg.sender][protocolId] = true;
         emit ProtocolRequested(protocolId, msg.sender);
     }
 
+    // Setter Functions
     // This function will be called inside of OperationCenter by DAO
-    function requestProcessInspector(address producer, uint256 protocolId) internal {
-        processInspectorRequested[producer][protocolId] = true;
+    function setRequestedProtocolsByProducersMapping(
+        address producer,
+        uint256 protocolId,
+        bool isRequested
+    ) external {
+        requestedProtocolsByProducers[producer][protocolId] = isRequested;
+    }
+
+    function setProducerToAcceptedProposal(address producer, uint256 proposalIndex) external {
+        producerToAcceptedProposal[producer] = proposalIndex;
+    }
+
+    // Getter Functions
+    // This function will be called inside of OperationCenter by DAO
+    function getRequestedProtocolsByProducersMapping(
+        address producer,
+        uint256 protocolId
+    ) external view returns (bool) {
+        return requestedProtocolsByProducers[producer][protocolId];
+    }
+
+    function getInspectorOfCertificationRequest(uint256 tokenId) public view returns (address) {
+        return certificationRequests[tokenId].inspector;
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "./NFTHarvest.sol";
+import "./HarvestToken.sol";
 
 /* Errors */
 error GoodExchange__ProductNotCertified();
@@ -13,13 +14,15 @@ error GoodExchange__NotEnoughSupplyForSale();
 error GoodExchange__InvalidAmount();
 error GoodExchange__ZeroIsIdOfFungibleToken();
 
-contract GoodExchange is NFTHarvest {
+contract GoodExchange is HarvestToken {
     /* Type declarations */
     struct Listing {
         address producer;
         uint256 amount;
         uint256 unitPrice;
     }
+
+    NFTHarvest nftContract;
 
     /* State variables */
     mapping(address => mapping(uint256 => Listing)) private listingByProducer; // producer => token id => Listing
@@ -49,7 +52,7 @@ contract GoodExchange is NFTHarvest {
     );
 
     /* Modifiers */
-    modifier alreadyListed(address account, uint256 tokenId) {
+    modifier onlyNotListed(address account, uint256 tokenId) {
         if (listingByProducer[account][tokenId].amount > 0) {
             revert GoodExchange__AlreadyListed();
         }
@@ -78,13 +81,26 @@ contract GoodExchange is NFTHarvest {
     }
 
     modifier onlyCertified(uint256 tokenId) {
-        if (s_nftMetadatas[tokenId].isCertified == false) {
+        if (nftContract.getIsCertified(tokenId) == false) {
             revert GoodExchange__ProductNotCertified();
         }
         _;
     }
 
-    // constructor() TokenHarvest(msg.sender) {}
+    modifier onlyOwnerHasEnoughToken(
+        address owner,
+        uint256 tokenId,
+        uint256 amount
+    ) {
+        if (nftContract.getBalanceOf(owner, tokenId) < amount) {
+            revert TokenHarvest__NotEnoughToken();
+        }
+        _;
+    }
+
+    constructor(address nftContractAddress) {
+        nftContract = NFTHarvest(nftContractAddress);
+    }
 
     /* Functions */
 
@@ -100,11 +116,10 @@ contract GoodExchange is NFTHarvest {
         uint256 unitPrice
     )
         external
-        onlyNft(tokenId)
         invalidPrice(unitPrice)
         invalidAmount(amount)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
-        alreadyListed(msg.sender, tokenId)
+        onlyNotListed(msg.sender, tokenId)
         onlyCertified(tokenId)
     {
         // check for approval
@@ -116,7 +131,6 @@ contract GoodExchange is NFTHarvest {
         uint256 tokenId
     )
         external
-        onlyNft(tokenId)
         notListed(msg.sender, tokenId)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, listingByProducer[msg.sender][tokenId].amount)
     {
@@ -130,7 +144,6 @@ contract GoodExchange is NFTHarvest {
         uint256 unitPrice
     )
         external
-        onlyNft(tokenId)
         invalidPrice(unitPrice)
         invalidAmount(amount)
         notListed(msg.sender, tokenId)
@@ -141,22 +154,23 @@ contract GoodExchange is NFTHarvest {
         emit ListingUpdated(tokenId, msg.sender, amount, unitPrice);
     }
 
+    // Whole function will be updated
     function purchaseProduct(
         address producer,
         uint256 tokenId,
         uint256 amount
-    ) external onlyNft(tokenId) invalidAmount(amount) notListed(producer, tokenId) {
+    ) external invalidAmount(amount) notListed(producer, tokenId) {
         Listing memory listing = listingByProducer[producer][tokenId];
         if (listing.amount < amount) {
             revert GoodExchange__NotEnoughSupplyForSale();
         }
         uint256 totalPrice = listing.amount * listing.unitPrice;
-        if (balanceOf(msg.sender, getIdOfFungibleToken()) < totalPrice) {
+        if (nftContract.getBalanceOf(msg.sender, 0) < totalPrice) {
             revert GoodExchange__InsufficientFunds();
         }
         // check for approval
-        safeTransferFrom(msg.sender, producer, getIdOfFungibleToken(), totalPrice, ""); // send hrv token to the nft owner
-        safeTransferFrom(producer, msg.sender, tokenId, amount, ""); // send nft to the account who send money as hrv token
+        nftContract.safeTransferFrom(msg.sender, producer, 0, totalPrice, ""); // send hrv token to the nft owner
+        nftContract.safeTransferFrom(producer, msg.sender, tokenId, amount, ""); // send nft to the account who send money as hrv token
         if (listing.amount == amount) {
             delete listingByProducer[producer][tokenId];
         } else {

@@ -3,7 +3,9 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "./InspectorContract.sol";
+import "./ProducerContract.sol";
+
+import "./HarvestToken.sol";
 
 error OperationCenter__ThisProtocolNotRequestedByThisProducer();
 error OperationCenter__YouAreNotMemberOfDao();
@@ -17,22 +19,32 @@ error OperationCenter__FailedToWithdrawEthers();
 error OperationCenter__NotSufficientBalance();
 error OperationCenter__InvalidProducerAddress();
 
-contract OperationCenter is InspectorContract {
+contract OperationCenter is HarvestToken {
     // Struct named Proposal containing all relevant information
     struct Proposal {
         uint256 proposalId;
         address producer;
+        address inspector;
         uint256 protocolId; // This is the reference id for the farmer protocols which are storing off-chain
+        uint256 capacityCommitment;
+        uint256 avgTokenPriceOfCapacityCommitment;
         string description;
         uint256 deadline;
         uint256 forVotes;
         uint256 againstVotes;
         bool executed;
+        // if passed is false, it's not certain that the proposal rejected, but if it's true, the proposal definitely passed
+        bool passed;
         mapping(address => bool) voters;
     }
 
-    IERC20 harvestToken;
+    ProducerContract public producerContractInstance;
 
+    uint256 constant TOKEN_CREDIT_PERCENTAGE = 25;
+
+    // inspector address => amount of guaranteed amount taken from inspector
+    mapping(address => uint256) public guaranteedAmountsOfInspectors;
+    // producer address => amount of credited tokens
     mapping(address => uint256) public creditedTokens;
     // mapping of inspectors to identify which inspector is a dao member
     mapping(address => bool) private daoMemberInspectors;
@@ -44,10 +56,15 @@ contract OperationCenter is InspectorContract {
     event NewProposal(uint256 indexed id, string description);
     event Vote(uint256 indexed id, bool vote, address indexed voter);
     event ProposalExecuted(uint256 indexed id);
-    event TokenTransferred(IERC20 token, address to, uint256 amount);
+    event TokenTransferred(address indexed from, address indexed to, uint256 amount);
 
     modifier onlyRequestedProtocolByProducer(address producer, uint256 protocolId) {
-        if (!requestedProtocolsByProducers[producer][protocolId]) {
+        if (
+            producerContractInstance.getRequestedProtocolsByProducersMapping(
+                producer,
+                protocolId
+            ) == false
+        ) {
             revert OperationCenter__ThisProtocolNotRequestedByThisProducer();
         }
         _;
@@ -91,9 +108,9 @@ contract OperationCenter is InspectorContract {
         _;
     }
 
-    constructor(address tokenAddress) {
+    constructor(address producerContractAddress) {
         proposalCounter = 0;
-        harvestToken = IERC20(tokenAddress);
+        producerContractInstance = ProducerContract(producerContractAddress);
     }
 
     function beMemberOfDao() external onlyRole(UserRole.Inspector) {
@@ -107,7 +124,9 @@ contract OperationCenter is InspectorContract {
     function createProposal(
         string memory description,
         uint256 protocolId,
-        address producer
+        address producer,
+        uint256 capacityCommitment,
+        uint256 avgTokenPriceOfCapacityCommitment
     )
         external
         onlyMemberInspector(msg.sender)
@@ -121,11 +140,14 @@ contract OperationCenter is InspectorContract {
         newPropose.proposalId = proposalCounter;
         newPropose.producer = producer;
         newPropose.protocolId = protocolId;
+        newPropose.capacityCommitment = capacityCommitment;
+        newPropose.avgTokenPriceOfCapacityCommitment = avgTokenPriceOfCapacityCommitment;
         newPropose.description = description;
         newPropose.deadline = deadline;
         newPropose.forVotes = 0;
         newPropose.againstVotes = 0;
         newPropose.executed = false;
+        newPropose.passed = false;
         proposalCounter++;
         emit NewProposal(proposalCounter, description);
     }
@@ -148,19 +170,32 @@ contract OperationCenter is InspectorContract {
     }
 
     function executeProposal(
-        uint256 proposalIndex,
-        uint256 creditAmount
+        uint256 proposalIndex
     ) external onlyMemberInspector(msg.sender) onlyExpiredAndNotExecutedProposals(proposalIndex) {
         address producer = proposals[proposalIndex].producer;
         uint256 protocolId = proposals[proposalIndex].protocolId;
         // we are resetting the value of this mapping bcs later the same producer can request for the same protocol
-        requestedProtocolsByProducers[producer][protocolId] = false;
+        producerContractInstance.setRequestedProtocolsByProducersMapping(
+            producer,
+            protocolId,
+            false
+        );
         if (proposals[proposalIndex].forVotes > proposals[proposalIndex].againstVotes) {
             proposals[proposalIndex].executed = true;
+            proposals[proposalIndex].passed = true;
+            // // set the proposal index according to producer and protocol id
+            // producerContractInstance.setPassedProposalIndexFromProtocolId(
+            //     producer,
+            //     protocolId,
+            //     proposalIndex
+            // );
+            producerContractInstance.setProducerToAcceptedProposal(producer, proposalIndex);
             // send some credit token to the producer
-            creditHarvestToken(creditAmount, producer);
+            uint256 approximateCreditAmount = (proposals[proposalIndex]
+                .avgTokenPriceOfCapacityCommitment * 25) / 100;
+            _creditHarvestToken(approximateCreditAmount, producer);
             // request an inspector to inspect the farm
-            requestProcessInspector(producer, protocolId);
+            // producerContractInstance.requestProcessInspector(producer, protocolId);
             // to assign an inspector, take some commitment to the treasury as guarantor then give them authority to inspect
         } else {
             revert OperationCenter__ProposalDidntPass();
@@ -168,20 +203,20 @@ contract OperationCenter is InspectorContract {
         emit ProposalExecuted(proposalIndex);
     }
 
-    function creditHarvestToken(
+    function _creditHarvestToken(
         uint256 amount,
         address producer
     ) private onlySufficientBalance(amount) {
         creditedTokens[producer] = amount;
-        harvestToken.transferFrom(address(this), producer, amount);
+        transferFrom(address(this), producer, amount);
 
-        emit TokenTransferred(harvestToken, producer, amount);
+        emit TokenTransferred(address(this), producer, amount);
     }
 
     function withdrawHarvestToken(uint256 amount) external onlyOwner onlySufficientBalance(amount) {
-        harvestToken.transferFrom(address(this), msg.sender, amount);
+        transferFrom(address(this), msg.sender, amount);
 
-        emit TokenTransferred(harvestToken, msg.sender, amount);
+        emit TokenTransferred(address(this), msg.sender, amount);
     }
 
     function withdrawEther() external onlyOwner {
@@ -195,11 +230,29 @@ contract OperationCenter is InspectorContract {
         }
     }
 
-    receive() external payable {}
+    // setter functions
+    function setInspectorToProposal(uint256 proposalIndex, address inspector) external {
+        proposals[proposalIndex].inspector = inspector;
+    }
 
-    fallback() external payable {}
+    function setGuaranteedAmountsOfInspectors(address inspector, uint256 amount) external {
+        guaranteedAmountsOfInspectors[inspector] = amount;
+    }
 
+    // getter functions
     function getBalance() public view returns (uint256) {
-        return harvestToken.balanceOf(address(this));
+        return balanceOf(address(this));
+    }
+
+    function getAvgTokenPriceOfCapacityCommitment(uint256 index) external view returns (uint256) {
+        return proposals[index].avgTokenPriceOfCapacityCommitment;
+    }
+
+    function getPassedMemberOfProposal(uint256 proposalIndex) external view returns (bool) {
+        return proposals[proposalIndex].passed;
+    }
+
+    function getInspectorMemberOfProposal(uint256 proposalIndex) external view returns (address) {
+        return proposals[proposalIndex].inspector;
     }
 }
