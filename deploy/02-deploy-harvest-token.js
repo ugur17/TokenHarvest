@@ -8,7 +8,7 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     args = [];
 
-    const inspectorContract = await deploy("InspectorContract", {
+    const harvestToken = await deploy("HarvestToken", {
         from: deployer,
         args: args,
         log: true,
@@ -17,9 +17,9 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     if(!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
         log("Verifying...");
-        await verify(goodExchange.address, args);
+        await verify(harvestToken.address, args);
     }
     log("------------------------------------");
 }
 
-module.exports.tags = ["all", "inspectorContract"];
+module.exports.tags = ["all", "harvestToken"];

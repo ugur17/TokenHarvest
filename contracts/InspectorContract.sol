@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import "./OperationCenter.sol";
-import "./NFTHarvest.sol";
 import "./ProducerContract.sol";
 
 /* Errors */
@@ -11,9 +10,12 @@ error InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
 error InspectorContract__InspectorDidntRequested();
 error InspectorContract__ProposalDidntPassedYet();
 error InspectorContract__InspectorAlreadyAssigned();
+error InspectorContract__YouAreNotTheInspectorOfThisProposal();
 
 contract InspectorContract is ProducerContract {
     OperationCenter public dao;
+
+    uint256 constant INSPECTOR_FEE = 2;
     /* Events */
     event CertificationRequestAccepted(uint256 indexed tokenId, address indexed inspector);
     event CertificationApproved(uint256 indexed tokenId, address indexed inspector);
@@ -35,16 +37,9 @@ contract InspectorContract is ProducerContract {
         _;
     }
 
-    modifier onlyPassedProposals(uint256 proposalIndex) {
-        if (dao.getPassedMemberOfProposal(proposalIndex) == false) {
-            revert InspectorContract__ProposalDidntPassedYet();
-        }
-        _;
-    }
-
-    modifier onlyProposalWhichInspectorNotAssigned(uint256 proposalIndex) {
-        if (dao.getInspectorMemberOfProposal(proposalIndex) != address(0)) {
-            revert InspectorContract__InspectorAlreadyAssigned();
+    modifier onlyAcceptedCertificationRequestsByInspector(uint256 tokenId) {
+        if (certificationRequests[tokenId].inspector != msg.sender) {
+            revert InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
         }
         _;
     }
@@ -66,7 +61,7 @@ contract InspectorContract is ProducerContract {
 
     function approveCertification(
         uint256 tokenId
-    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequests(tokenId) {
+    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequestsByInspector(tokenId) {
         delete certificationRequests[tokenId];
         nftContract.certifyNft(tokenId);
         emit CertificationApproved(tokenId, msg.sender);
@@ -79,22 +74,17 @@ contract InspectorContract is ProducerContract {
         emit CertificationRejected(tokenId, msg.sender);
     }
 
-    function assignInspectorToProposal(
-        uint256 proposalIndex
-    )
-        external
-        onlyRole(UserRole.Inspector)
-        onlyPassedProposals(proposalIndex) // check if proposal is passed
-        onlyProposalWhichInspectorNotAssigned(proposalIndex) // check if any inspector already assigned
-    {
+    function assignInspectorToProposal(uint256 proposalIndex) external {
         uint256 guaranteedAmount = dao.getAvgTokenPriceOfCapacityCommitment(proposalIndex);
+        dao._assignInspectorToProposal(proposalIndex, msg.sender, guaranteedAmount);
+        // send some guaranteed token to the treasury
         _sendGuaranteedAmount(guaranteedAmount);
-        dao.setGuaranteedAmountsOfInspectors(msg.sender, guaranteedAmount);
-        dao.setInspectorToProposal(proposalIndex, msg.sender);
         emit ProcessInspectionAccepted(proposalIndex, msg.sender);
     }
 
-    // write a function to approve inspection of process of farm during the execution of protocol
+    function approveProcessInspection(uint256 proposalIndex) external {
+        dao._setPassedInspection(msg.sender, proposalIndex, true, INSPECTOR_FEE);
+    }
 
     function _sendGuaranteedAmount(uint256 amount) private {
         transfer(address(dao), amount);

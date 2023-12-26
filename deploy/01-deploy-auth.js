@@ -8,7 +8,7 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     args = [];
 
-    const goodExchange = await deploy("Auth", {
+    const auth = await deploy("Auth", {
         from: deployer,
         args: args,
         log: true,
@@ -17,7 +17,7 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     if(!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
         log("Verifying...");
-        await verify(goodExchange.address, args);
+        await verify(auth.address, args);
     }
     log("------------------------------------");
 }

@@ -18,6 +18,9 @@ error OperationCenter__NothingToWithdraw();
 error OperationCenter__FailedToWithdrawEthers();
 error OperationCenter__NotSufficientBalance();
 error OperationCenter__InvalidProducerAddress();
+error OperationCenter__InspectorAlreadyAssigned();
+error OperationCenter__ProposalDidntPassedYet();
+error OperationCenter__YouAreNotTheInspectorOfThisProposal();
 
 contract OperationCenter is HarvestToken {
     // Struct named Proposal containing all relevant information
@@ -26,7 +29,6 @@ contract OperationCenter is HarvestToken {
         address producer;
         address inspector;
         uint256 protocolId; // This is the reference id for the farmer protocols which are storing off-chain
-        uint256 capacityCommitment;
         uint256 avgTokenPriceOfCapacityCommitment;
         string description;
         uint256 deadline;
@@ -34,7 +36,8 @@ contract OperationCenter is HarvestToken {
         uint256 againstVotes;
         bool executed;
         // if passed is false, it's not certain that the proposal rejected, but if it's true, the proposal definitely passed
-        bool passed;
+        bool passedVoting;
+        bool passedInspection;
         mapping(address => bool) voters;
     }
 
@@ -42,8 +45,8 @@ contract OperationCenter is HarvestToken {
 
     uint256 constant TOKEN_CREDIT_PERCENTAGE = 25;
 
-    // inspector address => amount of guaranteed amount taken from inspector
-    mapping(address => uint256) public guaranteedAmountsOfInspectors;
+    // (inspector address => (proposal index => amount)) of guaranteed amount taken from inspector
+    mapping(address => mapping(uint256 => uint256)) public guaranteedAmountsOfInspectors;
     // producer address => amount of credited tokens
     mapping(address => uint256) public creditedTokens;
     // mapping of inspectors to identify which inspector is a dao member
@@ -108,6 +111,27 @@ contract OperationCenter is HarvestToken {
         _;
     }
 
+    modifier onlyProposalWhichInspectorNotAssigned(uint256 proposalIndex) {
+        if (proposals[proposalIndex].inspector != address(0)) {
+            revert OperationCenter__InspectorAlreadyAssigned();
+        }
+        _;
+    }
+
+    modifier onlyPassedProposals(uint256 proposalIndex) {
+        if (proposals[proposalIndex].passedVoting == false) {
+            revert OperationCenter__ProposalDidntPassedYet();
+        }
+        _;
+    }
+
+    modifier onlyAssignedInspector(address inspector, uint256 proposalIndex) {
+        if (proposals[proposalIndex].inspector != inspector) {
+            revert OperationCenter__YouAreNotTheInspectorOfThisProposal();
+        }
+        _;
+    }
+
     constructor(address producerContractAddress) {
         proposalCounter = 0;
         producerContractInstance = ProducerContract(producerContractAddress);
@@ -125,7 +149,6 @@ contract OperationCenter is HarvestToken {
         string memory description,
         uint256 protocolId,
         address producer,
-        uint256 capacityCommitment,
         uint256 avgTokenPriceOfCapacityCommitment
     )
         external
@@ -140,14 +163,14 @@ contract OperationCenter is HarvestToken {
         newPropose.proposalId = proposalCounter;
         newPropose.producer = producer;
         newPropose.protocolId = protocolId;
-        newPropose.capacityCommitment = capacityCommitment;
         newPropose.avgTokenPriceOfCapacityCommitment = avgTokenPriceOfCapacityCommitment;
         newPropose.description = description;
         newPropose.deadline = deadline;
         newPropose.forVotes = 0;
         newPropose.againstVotes = 0;
         newPropose.executed = false;
-        newPropose.passed = false;
+        newPropose.passedVoting = false;
+        newPropose.passedInspection = false;
         proposalCounter++;
         emit NewProposal(proposalCounter, description);
     }
@@ -182,21 +205,11 @@ contract OperationCenter is HarvestToken {
         );
         if (proposals[proposalIndex].forVotes > proposals[proposalIndex].againstVotes) {
             proposals[proposalIndex].executed = true;
-            proposals[proposalIndex].passed = true;
-            // // set the proposal index according to producer and protocol id
-            // producerContractInstance.setPassedProposalIndexFromProtocolId(
-            //     producer,
-            //     protocolId,
-            //     proposalIndex
-            // );
-            producerContractInstance.setProducerToAcceptedProposal(producer, proposalIndex);
+            proposals[proposalIndex].passedVoting = true;
             // send some credit token to the producer
             uint256 approximateCreditAmount = (proposals[proposalIndex]
-                .avgTokenPriceOfCapacityCommitment * 25) / 100;
+                .avgTokenPriceOfCapacityCommitment * TOKEN_CREDIT_PERCENTAGE) / 100;
             _creditHarvestToken(approximateCreditAmount, producer);
-            // request an inspector to inspect the farm
-            // producerContractInstance.requestProcessInspector(producer, protocolId);
-            // to assign an inspector, take some commitment to the treasury as guarantor then give them authority to inspect
         } else {
             revert OperationCenter__ProposalDidntPass();
         }
@@ -231,12 +244,35 @@ contract OperationCenter is HarvestToken {
     }
 
     // setter functions
-    function setInspectorToProposal(uint256 proposalIndex, address inspector) external {
+    function _assignInspectorToProposal(
+        uint256 proposalIndex,
+        address inspector,
+        uint256 amount
+    )
+        external
+        onlyRole(UserRole.Inspector)
+        onlyProposalWhichInspectorNotAssigned(proposalIndex)
+        onlyPassedProposals(proposalIndex)
+    {
         proposals[proposalIndex].inspector = inspector;
+        guaranteedAmountsOfInspectors[inspector][proposalIndex] = amount;
     }
 
-    function setGuaranteedAmountsOfInspectors(address inspector, uint256 amount) external {
-        guaranteedAmountsOfInspectors[inspector] = amount;
+    function _setPassedInspection(
+        address inspector,
+        uint256 proposalIndex,
+        bool passedOrNot,
+        uint256 inspectorFee
+    ) external onlyRole(UserRole.Inspector) onlyAssignedInspector(inspector, proposalIndex) {
+        proposals[proposalIndex].passedInspection = passedOrNot;
+        if (passedOrNot) {
+            // send the taken guaranteed token amount from inspector back to the inspector
+            // Also adds the comission of inspector
+            uint256 amount = (guaranteedAmountsOfInspectors[inspector][proposalIndex] *
+                (100 + inspectorFee)) / 100;
+            transferFrom(address(this), inspector, amount);
+            guaranteedAmountsOfInspectors[inspector][proposalIndex] = 0;
+        }
     }
 
     // getter functions
@@ -248,8 +284,8 @@ contract OperationCenter is HarvestToken {
         return proposals[index].avgTokenPriceOfCapacityCommitment;
     }
 
-    function getPassedMemberOfProposal(uint256 proposalIndex) external view returns (bool) {
-        return proposals[proposalIndex].passed;
+    function getPassedVotingMemberOfProposal(uint256 proposalIndex) external view returns (bool) {
+        return proposals[proposalIndex].passedVoting;
     }
 
     function getInspectorMemberOfProposal(uint256 proposalIndex) external view returns (address) {

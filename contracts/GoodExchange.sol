@@ -169,6 +169,7 @@ contract GoodExchange is HarvestToken {
             revert GoodExchange__InsufficientFunds();
         }
         // check for approval
+        // send %0,01 jurisdication fee to the dao treasury
         nftContract.safeTransferFrom(msg.sender, producer, 0, totalPrice, ""); // send hrv token to the nft owner
         nftContract.safeTransferFrom(producer, msg.sender, tokenId, amount, ""); // send nft to the account who send money as hrv token
         if (listing.amount == amount) {

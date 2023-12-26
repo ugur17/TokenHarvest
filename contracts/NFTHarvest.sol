@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "./ToString.sol";
 import "base64-sol/base64.sol";
 
-import "./ProducerContract.sol";
 import "./HarvestToken.sol";
 
 error TokenHarvest__NotOwner();
@@ -27,19 +26,10 @@ contract NFTHarvest is ERC1155, HarvestToken {
         bool isCertified;
     }
 
-    ProducerContract producerContract;
-
     /* Non-Fungible Token State Variables */
     uint256 private s_nftCounter;
     string private constant BASE_URI = "data:application/json;base64,";
     mapping(uint256 => NftMetadata) internal s_nftMetadatas; // id => NftMetadata
-
-    /* Fungible Token State Variables */
-    string private constant NAME_OF_FUNGIBLE_TOKEN = "HarvestToken";
-    string private constant SYMBOL_OF_FUNGIBLE_TOKEN = "Hrv";
-    uint256 private constant ID_OF_FUNGIBLE_TOKEN = 0; // id of HRV token
-    uint256 private s_hrvCurrentSupply;
-    uint256 private constant MAX_SUPPLY_OF_FUNGIBLE_TOKEN = 10000000; // 10m
 
     /* Events */
     event CreatedNFT(
@@ -91,17 +81,8 @@ contract NFTHarvest is ERC1155, HarvestToken {
         _;
     }
 
-    modifier onlyAcceptedCertificationRequestsByInspector(uint256 tokenId) {
-        if (producerContract.getInspectorOfCertificationRequest(tokenId) != msg.sender) {
-            revert NFTHarvest__YouDidntAcceptAnyRequestWithThisTokenId();
-        }
-        _;
-    }
-
-    constructor(address producerContractAddress) ERC1155(BASE_URI) {
-        producerContract = ProducerContract(producerContractAddress);
+    constructor() ERC1155(BASE_URI) {
         s_nftCounter = 1; // NFT id counter starts from 1, because id of fungible token is 0
-        s_hrvCurrentSupply = 0;
     }
 
     /* Functions */
@@ -146,19 +127,6 @@ contract NFTHarvest is ERC1155, HarvestToken {
         emit CreatedNFT(msg.sender, tokenId, amount, name, productAmountOfEachToken);
     }
 
-    function mintHRV(uint256 amount) public /* onlyOwner */ {
-        if (s_hrvCurrentSupply + amount > MAX_SUPPLY_OF_FUNGIBLE_TOKEN) {
-            revert TokenHarvest__ExceedsTheSupplyLimit();
-        }
-        s_hrvCurrentSupply += amount;
-        _mint(msg.sender, ID_OF_FUNGIBLE_TOKEN, amount, "");
-        emit MintedHrv(msg.sender, amount);
-    }
-
-    // function burnHRV(uint256 amount) public /* onlyOwner */ {
-
-    // }
-
     function burnNFT(
         uint256 tokenId,
         uint256 amount
@@ -173,20 +141,11 @@ contract NFTHarvest is ERC1155, HarvestToken {
     }
 
     // this function will be called from inspector contract
-    function certifyNft(
-        uint256 tokenId
-    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequestsByInspector(tokenId) {
+    function certifyNft(uint256 tokenId) external {
         s_nftMetadatas[tokenId].isCertified = true;
     }
 
     /* Getter Functions */
-    function getIdOfFungibleToken() public pure returns (uint256) {
-        return ID_OF_FUNGIBLE_TOKEN;
-    }
-
-    function getHrvTokenBalance(address account) public view returns (uint256) {
-        return balanceOf(account, ID_OF_FUNGIBLE_TOKEN); // id of Hrv token is zero
-    }
 
     function getNftMetadata(uint256 tokenId) public view returns (NftMetadata memory) {
         return s_nftMetadatas[tokenId];
@@ -198,10 +157,6 @@ contract NFTHarvest is ERC1155, HarvestToken {
 
     function getNftCounter() public view returns (uint256) {
         return s_nftCounter;
-    }
-
-    function getCurrentHrvSupply() public view returns (uint256) {
-        return s_hrvCurrentSupply;
     }
 
     function getNameMemberOfMetadata(uint256 tokenId) public view returns (string memory) {

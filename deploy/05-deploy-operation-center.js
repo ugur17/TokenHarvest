@@ -8,7 +8,10 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     args = [];
 
-    const goodExchange = await deploy("GoodExchange", {
+    const producerContract = await deployments.get('ProducerContract');
+    args.push(producerContract.address);
+
+    const operationCenter = await deploy("OperationCenter", {
         from: deployer,
         args: args,
         log: true,
@@ -17,9 +20,9 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     if(!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
         log("Verifying...");
-        await verify(goodExchange.address, args);
+        await verify(operationCenter.address, args);
     }
     log("------------------------------------");
 }
 
-module.exports.tags = ["all", "goodExchange"];
+module.exports.tags = ["all", "operationCenter"];

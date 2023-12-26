@@ -21,8 +21,6 @@ contract ProducerContract is HarvestToken {
     mapping(uint256 => CertificationRequest) public certificationRequests;
     // (producer address => (protocol id => requested or not)) to store which producer requested which protocol (protocols storing off-chain)
     mapping(address => mapping(uint256 => bool)) public requestedProtocolsByProducers;
-    // producer => proposal index
-    mapping(address => uint256) public producerToAcceptedProposal;
 
     event CertificationRequested(uint256 indexed tokenId, address indexed producer);
     event ProtocolRequested(uint256 indexed protocolId, address indexed producer);
@@ -76,10 +74,6 @@ contract ProducerContract is HarvestToken {
         bool isRequested
     ) external {
         requestedProtocolsByProducers[producer][protocolId] = isRequested;
-    }
-
-    function setProducerToAcceptedProposal(address producer, uint256 proposalIndex) external {
-        producerToAcceptedProposal[producer] = proposalIndex;
     }
 
     // Getter Functions

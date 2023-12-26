@@ -8,10 +8,12 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     args = [];
 
+    const operationCenter = await deployments.get('OperationCenter');
     const nftHarvest = await deployments.get('NFTHarvest');
+    args.push(operationCenter.address);
     args.push(nftHarvest.address);
 
-    const producerContract = await deploy("ProducerContract", {
+    const inspectorContract = await deploy("InspectorContract", {
         from: deployer,
         args: args,
         log: true,
@@ -20,9 +22,9 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     if(!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
         log("Verifying...");
-        await verify(producerContract.address, args);
+        await verify(inspectorContract.address, args);
     }
     log("------------------------------------");
 }
 
-module.exports.tags = ["all", "producerContract"];
+module.exports.tags = ["all", "inspectorContract"];
