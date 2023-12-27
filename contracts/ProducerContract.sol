@@ -4,18 +4,21 @@ pragma solidity ^0.8.0;
 import "./NFTHarvest.sol";
 import "./HarvestToken.sol";
 
+import "./Auth.sol";
+
 /* Errors */
 error ProducerContract__ProductAlreadyCertified();
 error ProducerContract__CertificationRequestAlreadySent();
 error ProducerContract__TokenDoesNotExist();
 
-contract ProducerContract is HarvestToken {
+contract ProducerContract is Auth {
     struct CertificationRequest {
         address producer;
         address inspector;
     }
 
     NFTHarvest nftContract;
+    HarvestToken token;
 
     // token id => CertificationRequest instance
     mapping(uint256 => CertificationRequest) public certificationRequests;
@@ -43,8 +46,9 @@ contract ProducerContract is HarvestToken {
         _;
     }
 
-    constructor(address nftContractAddress) {
+    constructor(address nftContractAddress, address harvestTokenContractAddress) {
         nftContract = NFTHarvest(nftContractAddress);
+        token = HarvestToken(harvestTokenContractAddress);
     }
 
     function requestCertification(

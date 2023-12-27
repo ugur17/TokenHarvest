@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "./ToString.sol";
 import "base64-sol/base64.sol";
 
-import "./HarvestToken.sol";
+import "./Auth.sol";
 
 error TokenHarvest__NotOwner();
 error TokenHarvest__NotEnoguhSupply();
@@ -18,7 +18,7 @@ error TokenHarvest__InvalidParameters();
 error TokenHarvest__ThisTokenIsNotNft();
 error NFTHarvest__YouDidntAcceptAnyRequestWithThisTokenId();
 
-contract NFTHarvest is ERC1155, HarvestToken {
+contract NFTHarvest is ERC1155, Auth {
     /* Type Declarations */
     struct NftMetadata {
         string name;

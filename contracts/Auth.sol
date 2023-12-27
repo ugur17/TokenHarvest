@@ -13,7 +13,7 @@ contract Auth is Ownable {
     enum UserRole {
         Producer,
         Inspector,
-        Customer
+        ThirdParty
     }
     struct User {
         string username;

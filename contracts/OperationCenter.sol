@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import "./ProducerContract.sol";
-
 import "./HarvestToken.sol";
+
+import "./Auth.sol";
 
 error OperationCenter__ThisProtocolNotRequestedByThisProducer();
 error OperationCenter__YouAreNotMemberOfDao();
@@ -21,8 +20,9 @@ error OperationCenter__InvalidProducerAddress();
 error OperationCenter__InspectorAlreadyAssigned();
 error OperationCenter__ProposalDidntPassedYet();
 error OperationCenter__YouAreNotTheInspectorOfThisProposal();
+error OperationCenter__ItsNotPaymentDate();
 
-contract OperationCenter is HarvestToken {
+contract OperationCenter is Auth {
     // Struct named Proposal containing all relevant information
     struct Proposal {
         uint256 proposalId;
@@ -42,8 +42,10 @@ contract OperationCenter is HarvestToken {
     }
 
     ProducerContract public producerContractInstance;
+    HarvestToken public token;
 
-    uint256 constant TOKEN_CREDIT_PERCENTAGE = 25;
+    uint256 constant TOKEN_CREDIT_PERCENTAGE = 50;
+    uint256 constant TOTAL_PRODUCER_FEE_PERCENTAGE = 20;
 
     // (inspector address => (proposal index => amount)) of guaranteed amount taken from inspector
     mapping(address => mapping(uint256 => uint256)) public guaranteedAmountsOfInspectors;
@@ -132,9 +134,10 @@ contract OperationCenter is HarvestToken {
         _;
     }
 
-    constructor(address producerContractAddress) {
+    constructor(address producerContractAddress, address harvestTokenContractAddress) {
         proposalCounter = 0;
         producerContractInstance = ProducerContract(producerContractAddress);
+        token = HarvestToken(harvestTokenContractAddress);
     }
 
     function beMemberOfDao() external onlyRole(UserRole.Inspector) {
@@ -221,13 +224,30 @@ contract OperationCenter is HarvestToken {
         address producer
     ) private onlySufficientBalance(amount) {
         creditedTokens[producer] = amount;
-        transferFrom(address(this), producer, amount);
+        token.transferFrom(address(this), producer, amount);
 
         emit TokenTransferred(address(this), producer, amount);
     }
 
+    function handlePurchase(address producer, uint256 totalPrice) external {
+        uint256 feeAmount = (TOTAL_PRODUCER_FEE_PERCENTAGE * totalPrice) / 100;
+        uint256 producerShare = totalPrice - feeAmount;
+        if (producerShare < creditedTokens[producer]) {
+            creditedTokens[producer] -= totalPrice;
+            return;
+        } else if (producerShare == creditedTokens[producer]) {
+            delete creditedTokens[producer];
+            return;
+        } else {
+            // if producerShare > creditedTokens[producer]
+            uint256 paymentAmount = producerShare - creditedTokens[producer];
+            token.transferFrom(address(this), producer, paymentAmount);
+            delete creditedTokens[producer];
+        }
+    }
+
     function withdrawHarvestToken(uint256 amount) external onlyOwner onlySufficientBalance(amount) {
-        transferFrom(address(this), msg.sender, amount);
+        token.transferFrom(address(this), msg.sender, amount);
 
         emit TokenTransferred(address(this), msg.sender, amount);
     }
@@ -270,25 +290,34 @@ contract OperationCenter is HarvestToken {
             // Also adds the comission of inspector
             uint256 amount = (guaranteedAmountsOfInspectors[inspector][proposalIndex] *
                 (100 + inspectorFee)) / 100;
-            transferFrom(address(this), inspector, amount);
+            token.transferFrom(address(this), inspector, amount);
             guaranteedAmountsOfInspectors[inspector][proposalIndex] = 0;
         }
     }
 
     // getter functions
-    function getBalance() public view returns (uint256) {
-        return balanceOf(address(this));
+    // calculating the day of the week using the Zeller's Congruence algorithm
+    function isMonday(uint256 timestamp) private pure returns (bool) {
+        // Get the day of the week for the provided timestamp (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+        uint256 dayOfWeek = (timestamp / (1 days) + 4) % 7; // January 1, 1970 was a Thursday (4)
+
+        // Check if the day of the week is Monday (1)
+        return (dayOfWeek == 1);
     }
 
-    function getAvgTokenPriceOfCapacityCommitment(uint256 index) external view returns (uint256) {
+    function getBalance() public view returns (uint256) {
+        return token.balanceOf(address(this));
+    }
+
+    function getAvgTokenPriceOfCapacityCommitment(uint256 index) public view returns (uint256) {
         return proposals[index].avgTokenPriceOfCapacityCommitment;
     }
 
-    function getPassedVotingMemberOfProposal(uint256 proposalIndex) external view returns (bool) {
+    function getPassedVotingMemberOfProposal(uint256 proposalIndex) public view returns (bool) {
         return proposals[proposalIndex].passedVoting;
     }
 
-    function getInspectorMemberOfProposal(uint256 proposalIndex) external view returns (address) {
+    function getInspectorMemberOfProposal(uint256 proposalIndex) public view returns (address) {
         return proposals[proposalIndex].inspector;
     }
 }

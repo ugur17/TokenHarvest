@@ -9,7 +9,9 @@ module.exports = async function ({getNamedAccounts, deployments}) {
     args = [];
 
     const nftHarvest = await deployments.get('NFTHarvest');
+    const harvestTokenContract = await deployments.get("HarvestToken");
     args.push(nftHarvest.address);
+    args.push(harvestTokenContract.address);
 
     const producerContract = await deploy("ProducerContract", {
         from: deployer,

@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "./Auth.sol";
 
 contract HarvestToken is ERC20, ERC20Burnable, Auth {
-    constructor() ERC20("HarvestToken", "HTK") {
+    constructor() ERC20("HarvestToken", "HRV") {
         _mint(msg.sender, 1000000 * 10 ** decimals());
     }
 

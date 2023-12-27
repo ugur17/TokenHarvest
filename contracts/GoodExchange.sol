@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import "./NFTHarvest.sol";
 import "./HarvestToken.sol";
+import "./OperationCenter.sol";
+
+import "./Auth.sol";
 
 /* Errors */
 error GoodExchange__ProductNotCertified();
@@ -13,8 +16,10 @@ error GoodExchange__ProductNotListed();
 error GoodExchange__NotEnoughSupplyForSale();
 error GoodExchange__InvalidAmount();
 error GoodExchange__ZeroIsIdOfFungibleToken();
+error GoodExchange__MarketPlaceNotApprovedBySeller();
+error GoodExchange__MarketPlaceNotApprovedByBuyer();
 
-contract GoodExchange is HarvestToken {
+contract GoodExchange is Auth {
     /* Type declarations */
     struct Listing {
         address producer;
@@ -23,6 +28,8 @@ contract GoodExchange is HarvestToken {
     }
 
     NFTHarvest nftContract;
+    HarvestToken token;
+    OperationCenter dao;
 
     /* State variables */
     mapping(address => mapping(uint256 => Listing)) private listingByProducer; // producer => token id => Listing
@@ -59,7 +66,7 @@ contract GoodExchange is HarvestToken {
         _;
     }
 
-    modifier notListed(address account, uint256 tokenId) {
+    modifier onlyListed(address account, uint256 tokenId) {
         if (listingByProducer[account][tokenId].producer == address(0)) {
             revert GoodExchange__ProductNotListed();
         }
@@ -98,8 +105,14 @@ contract GoodExchange is HarvestToken {
         _;
     }
 
-    constructor(address nftContractAddress) {
+    constructor(
+        address nftContractAddress,
+        address harvestTokenContractAddress,
+        address daoAddress
+    ) {
         nftContract = NFTHarvest(nftContractAddress);
+        token = HarvestToken(harvestTokenContractAddress);
+        dao = OperationCenter(daoAddress);
     }
 
     /* Functions */
@@ -123,6 +136,9 @@ contract GoodExchange is HarvestToken {
         onlyCertified(tokenId)
     {
         // check for approval
+        if (nftContract.isApprovedForAll(msg.sender, address(this)) == false) {
+            revert GoodExchange__MarketPlaceNotApprovedBySeller();
+        }
         listingByProducer[msg.sender][tokenId] = Listing(msg.sender, amount, unitPrice);
         emit ProductListed(tokenId, msg.sender, amount, unitPrice);
     }
@@ -131,7 +147,7 @@ contract GoodExchange is HarvestToken {
         uint256 tokenId
     )
         external
-        notListed(msg.sender, tokenId)
+        onlyListed(msg.sender, tokenId)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, listingByProducer[msg.sender][tokenId].amount)
     {
         delete listingByProducer[msg.sender][tokenId];
@@ -146,7 +162,7 @@ contract GoodExchange is HarvestToken {
         external
         invalidPrice(unitPrice)
         invalidAmount(amount)
-        notListed(msg.sender, tokenId)
+        onlyListed(msg.sender, tokenId)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
     {
         listingByProducer[msg.sender][tokenId].amount = amount;
@@ -159,19 +175,27 @@ contract GoodExchange is HarvestToken {
         address producer,
         uint256 tokenId,
         uint256 amount
-    ) external invalidAmount(amount) notListed(producer, tokenId) {
+    ) external invalidAmount(amount) onlyListed(producer, tokenId) {
         Listing memory listing = listingByProducer[producer][tokenId];
         if (listing.amount < amount) {
             revert GoodExchange__NotEnoughSupplyForSale();
         }
         uint256 totalPrice = listing.amount * listing.unitPrice;
-        if (nftContract.getBalanceOf(msg.sender, 0) < totalPrice) {
+        if (token.balanceOf(msg.sender) < totalPrice) {
             revert GoodExchange__InsufficientFunds();
         }
-        // check for approval
-        // send %0,01 jurisdication fee to the dao treasury
-        nftContract.safeTransferFrom(msg.sender, producer, 0, totalPrice, ""); // send hrv token to the nft owner
-        nftContract.safeTransferFrom(producer, msg.sender, tokenId, amount, ""); // send nft to the account who send money as hrv token
+        // check for approvals
+        if (nftContract.isApprovedForAll(producer, address(this)) == false) {
+            revert GoodExchange__MarketPlaceNotApprovedBySeller();
+        }
+        if (token.allowance(msg.sender, address(this)) < totalPrice) {
+            revert GoodExchange__MarketPlaceNotApprovedByBuyer();
+        }
+        // make the payment as hrv token
+        token.transferFrom(msg.sender, address(dao), totalPrice);
+        dao.handlePurchase(producer, totalPrice);
+        // send nft to the account who send money as hrv token
+        nftContract.safeTransferFrom(producer, msg.sender, tokenId, amount, "");
         if (listing.amount == amount) {
             delete listingByProducer[producer][tokenId];
         } else {
@@ -184,7 +208,7 @@ contract GoodExchange is HarvestToken {
     function getListing(
         address producer,
         uint256 tokenId
-    ) external view notListed(producer, tokenId) returns (Listing memory) {
+    ) external view onlyListed(producer, tokenId) returns (Listing memory) {
         return listingByProducer[producer][tokenId];
     }
 }

@@ -46,8 +46,9 @@ contract InspectorContract is ProducerContract {
 
     constructor(
         address daoAddress,
-        address nftContractAddress
-    ) ProducerContract(nftContractAddress) {
+        address nftContractAddress,
+        address harvestTokenContractAddress
+    ) ProducerContract(nftContractAddress, harvestTokenContractAddress) {
         dao = OperationCenter(daoAddress);
     }
 
@@ -87,6 +88,6 @@ contract InspectorContract is ProducerContract {
     }
 
     function _sendGuaranteedAmount(uint256 amount) private {
-        transfer(address(dao), amount);
+        token.transfer(address(dao), amount);
     }
 }
