@@ -193,7 +193,7 @@ contract GoodExchange is Auth {
         }
         // make the payment as hrv token
         token.transferFrom(msg.sender, address(dao), totalPrice);
-        dao.handlePurchase(producer, totalPrice);
+        dao._handlePurchase(producer, totalPrice);
         // send nft to the account who send money as hrv token
         nftContract.safeTransferFrom(producer, msg.sender, tokenId, amount, "");
         if (listing.amount == amount) {

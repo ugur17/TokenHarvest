@@ -76,7 +76,7 @@ contract InspectorContract is ProducerContract {
     }
 
     function assignInspectorToProposal(uint256 proposalIndex) external {
-        uint256 guaranteedAmount = dao.getAvgTokenPriceOfCapacityCommitment(proposalIndex);
+        uint256 guaranteedAmount = dao._getAvgTokenPriceOfCapacityCommitment(proposalIndex);
         dao._assignInspectorToProposal(proposalIndex, msg.sender, guaranteedAmount);
         // send some guaranteed token to the treasury
         _sendGuaranteedAmount(guaranteedAmount);

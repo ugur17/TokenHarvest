@@ -140,8 +140,8 @@ contract OperationCenter is Auth {
         token = HarvestToken(harvestTokenContractAddress);
     }
 
-    function beMemberOfDao() external onlyRole(UserRole.Inspector) {
-        daoMemberInspectors[msg.sender] = true;
+    function addMemberOfDao(address inspector) external onlyOwner {
+        daoMemberInspectors[inspector] = true;
     }
 
     function removeFromMembershipOfDao(address inspectorToBeRemoved) external onlyOwner {
@@ -219,33 +219,6 @@ contract OperationCenter is Auth {
         emit ProposalExecuted(proposalIndex);
     }
 
-    function _creditHarvestToken(
-        uint256 amount,
-        address producer
-    ) private onlySufficientBalance(amount) {
-        creditedTokens[producer] = amount;
-        token.transferFrom(address(this), producer, amount);
-
-        emit TokenTransferred(address(this), producer, amount);
-    }
-
-    function handlePurchase(address producer, uint256 totalPrice) external {
-        uint256 feeAmount = (TOTAL_PRODUCER_FEE_PERCENTAGE * totalPrice) / 100;
-        uint256 producerShare = totalPrice - feeAmount;
-        if (producerShare < creditedTokens[producer]) {
-            creditedTokens[producer] -= totalPrice;
-            return;
-        } else if (producerShare == creditedTokens[producer]) {
-            delete creditedTokens[producer];
-            return;
-        } else {
-            // if producerShare > creditedTokens[producer]
-            uint256 paymentAmount = producerShare - creditedTokens[producer];
-            token.transferFrom(address(this), producer, paymentAmount);
-            delete creditedTokens[producer];
-        }
-    }
-
     function withdrawHarvestToken(uint256 amount) external onlyOwner onlySufficientBalance(amount) {
         token.transferFrom(address(this), msg.sender, amount);
 
@@ -263,7 +236,40 @@ contract OperationCenter is Auth {
         }
     }
 
-    // setter functions
+    /* Functions will be called in this contract */
+    function _creditHarvestToken(
+        uint256 amount,
+        address producer
+    ) private onlySufficientBalance(amount) {
+        creditedTokens[producer] = amount;
+        token.transferFrom(address(this), producer, amount);
+
+        emit TokenTransferred(address(this), producer, amount);
+    }
+
+    /* Functions will be called from GoodExchange Contract */
+    function _handlePurchase(address producer, uint256 totalPrice) external {
+        uint256 feeAmount = (TOTAL_PRODUCER_FEE_PERCENTAGE * totalPrice) / 100;
+        uint256 producerShare = totalPrice - feeAmount;
+        if (producerShare < creditedTokens[producer]) {
+            creditedTokens[producer] -= totalPrice;
+            return;
+        } else if (producerShare == creditedTokens[producer]) {
+            delete creditedTokens[producer];
+            return;
+        } else {
+            // if producerShare > creditedTokens[producer]
+            uint256 paymentAmount = producerShare - creditedTokens[producer];
+            token.transferFrom(address(this), producer, paymentAmount);
+            delete creditedTokens[producer];
+        }
+    }
+
+    /* Functions will be called from InspectorContract */
+    function _getAvgTokenPriceOfCapacityCommitment(uint256 index) public view returns (uint256) {
+        return proposals[index].avgTokenPriceOfCapacityCommitment;
+    }
+
     function _assignInspectorToProposal(
         uint256 proposalIndex,
         address inspector,
@@ -295,22 +301,9 @@ contract OperationCenter is Auth {
         }
     }
 
-    // getter functions
-    // calculating the day of the week using the Zeller's Congruence algorithm
-    function isMonday(uint256 timestamp) private pure returns (bool) {
-        // Get the day of the week for the provided timestamp (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-        uint256 dayOfWeek = (timestamp / (1 days) + 4) % 7; // January 1, 1970 was a Thursday (4)
-
-        // Check if the day of the week is Monday (1)
-        return (dayOfWeek == 1);
-    }
-
+    /* Getter Functions */
     function getBalance() public view returns (uint256) {
         return token.balanceOf(address(this));
-    }
-
-    function getAvgTokenPriceOfCapacityCommitment(uint256 index) public view returns (uint256) {
-        return proposals[index].avgTokenPriceOfCapacityCommitment;
     }
 
     function getPassedVotingMemberOfProposal(uint256 proposalIndex) public view returns (bool) {
