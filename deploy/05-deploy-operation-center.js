@@ -10,9 +10,11 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     const producerContract = await deployments.get('ProducerContract');
     const harvestTokenContract = await deployments.get("HarvestToken");
+    const authContract = await deployments.get("Auth");
 
     args.push(producerContract.address);
     args.push(harvestTokenContract.address);
+    args.push(authContract.address);
 
     const operationCenter = await deploy("OperationCenter", {
         from: deployer,

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 import "./ProducerContract.sol";
 import "./HarvestToken.sol";
-
 import "./Auth.sol";
 
 error OperationCenter__ThisProtocolNotRequestedByThisProducer();
@@ -20,16 +21,16 @@ error OperationCenter__InvalidProducerAddress();
 error OperationCenter__InspectorAlreadyAssigned();
 error OperationCenter__ProposalDidntPassedYet();
 error OperationCenter__YouAreNotTheInspectorOfThisProposal();
-error OperationCenter__ItsNotPaymentDate();
+error OperationCenter__InsufficientRole();
+error OperationCenter__ProposalDoesNotExist();
 
-contract OperationCenter is Auth {
+contract OperationCenter is Ownable {
     // Struct named Proposal containing all relevant information
     struct Proposal {
         uint256 proposalId;
         address producer;
         address inspector;
         uint256 protocolId; // This is the reference id for the farmer protocols which are storing off-chain
-        uint256 avgTokenPriceOfCapacityCommitment;
         string description;
         uint256 deadline;
         uint256 forVotes;
@@ -43,8 +44,8 @@ contract OperationCenter is Auth {
 
     ProducerContract public producerContractInstance;
     HarvestToken public token;
+    Auth public auth;
 
-    uint256 constant TOKEN_CREDIT_PERCENTAGE = 50;
     uint256 constant TOTAL_PRODUCER_FEE_PERCENTAGE = 20;
 
     // (inspector address => (proposal index => amount)) of guaranteed amount taken from inspector
@@ -52,56 +53,21 @@ contract OperationCenter is Auth {
     // producer address => amount of credited tokens
     mapping(address => uint256) public creditedTokens;
     // mapping of inspectors to identify which inspector is a dao member
-    mapping(address => bool) private daoMemberInspectors;
+    mapping(address => bool) public daoMemberInspectors;
     // list of proposals from index to Proposal instance
     mapping(uint256 => Proposal) public proposals;
     // counter to identify the id of proposal
     uint256 public proposalCounter;
 
-    event NewProposal(uint256 indexed id, string description);
+    event NewMemberAdded(address indexed newMember);
+    event NewProposal(uint256 indexed id, address indexed producer);
     event Vote(uint256 indexed id, bool vote, address indexed voter);
     event ProposalExecuted(uint256 indexed id);
     event TokenTransferred(address indexed from, address indexed to, uint256 amount);
 
-    modifier onlyRequestedProtocolByProducer(address producer, uint256 protocolId) {
-        if (
-            producerContractInstance.getRequestedProtocolsByProducersMapping(
-                producer,
-                protocolId
-            ) == false
-        ) {
-            revert OperationCenter__ThisProtocolNotRequestedByThisProducer();
-        }
-        _;
-    }
-
     modifier onlyMemberInspector(address inspector) {
         if (daoMemberInspectors[inspector] == false) {
             revert OperationCenter__YouAreNotMemberOfDao();
-        }
-        _;
-    }
-
-    modifier onlyActiveProposals(uint256 proposalIndex) {
-        if (proposals[proposalIndex].deadline > block.timestamp) {
-            revert OperationCenter__DeadlineExceeded();
-        }
-        _;
-    }
-
-    modifier onlyExpiredAndNotExecutedProposals(uint256 proposalIndex) {
-        if (proposals[proposalIndex].deadline <= block.timestamp) {
-            revert OperationCenter__DeadlineHasNotExceeded();
-        }
-        if (proposals[proposalIndex].executed) {
-            revert OperationCenter__ProposalAlreadyExecuted();
-        }
-        _;
-    }
-
-    modifier onlyFirstVote(uint256 proposalIndex, address voter) {
-        if (proposals[proposalIndex].voters[voter]) {
-            revert OperationCenter__YouHaveAlreadyVoted();
         }
         _;
     }
@@ -113,35 +79,29 @@ contract OperationCenter is Auth {
         _;
     }
 
-    modifier onlyProposalWhichInspectorNotAssigned(uint256 proposalIndex) {
-        if (proposals[proposalIndex].inspector != address(0)) {
-            revert OperationCenter__InspectorAlreadyAssigned();
+    modifier onlyRole(address user, Auth.UserRole role) {
+        if (auth.getOnlyRole(user, role) == false || auth.isRegistered(user) == false) {
+            revert OperationCenter__InsufficientRole();
         }
         _;
     }
 
-    modifier onlyPassedProposals(uint256 proposalIndex) {
-        if (proposals[proposalIndex].passedVoting == false) {
-            revert OperationCenter__ProposalDidntPassedYet();
-        }
-        _;
-    }
-
-    modifier onlyAssignedInspector(address inspector, uint256 proposalIndex) {
-        if (proposals[proposalIndex].inspector != inspector) {
-            revert OperationCenter__YouAreNotTheInspectorOfThisProposal();
-        }
-        _;
-    }
-
-    constructor(address producerContractAddress, address harvestTokenContractAddress) {
+    constructor(
+        address producerContractAddress,
+        address harvestTokenContractAddress,
+        address authContractAddres
+    ) Ownable(msg.sender) {
         proposalCounter = 0;
         producerContractInstance = ProducerContract(producerContractAddress);
         token = HarvestToken(harvestTokenContractAddress);
+        auth = Auth(authContractAddres);
     }
 
-    function addMemberOfDao(address inspector) external onlyOwner {
+    function addMemberOfDao(
+        address inspector
+    ) external onlyOwner onlyRole(inspector, Auth.UserRole.Inspector) {
         daoMemberInspectors[inspector] = true;
+        emit NewMemberAdded(inspector);
     }
 
     function removeFromMembershipOfDao(address inspectorToBeRemoved) external onlyOwner {
@@ -151,13 +111,16 @@ contract OperationCenter is Auth {
     function createProposal(
         string memory description,
         uint256 protocolId,
-        address producer,
-        uint256 avgTokenPriceOfCapacityCommitment
-    )
-        external
-        onlyMemberInspector(msg.sender)
-        onlyRequestedProtocolByProducer(producer, protocolId)
-    {
+        address producer
+    ) external onlyMemberInspector(msg.sender) {
+        if (
+            producerContractInstance.getRequestedProtocolsByProducersMapping(
+                producer,
+                protocolId
+            ) == false
+        ) {
+            revert OperationCenter__ThisProtocolNotRequestedByThisProducer();
+        }
         if (producer == address(0)) {
             revert OperationCenter__InvalidProducerAddress();
         }
@@ -166,7 +129,6 @@ contract OperationCenter is Auth {
         newPropose.proposalId = proposalCounter;
         newPropose.producer = producer;
         newPropose.protocolId = protocolId;
-        newPropose.avgTokenPriceOfCapacityCommitment = avgTokenPriceOfCapacityCommitment;
         newPropose.description = description;
         newPropose.deadline = deadline;
         newPropose.forVotes = 0;
@@ -175,44 +137,55 @@ contract OperationCenter is Auth {
         newPropose.passedVoting = false;
         newPropose.passedInspection = false;
         proposalCounter++;
-        emit NewProposal(proposalCounter, description);
+        emit NewProposal(proposalCounter - 1, producer);
     }
 
     function vote(
         uint256 proposalIndex,
         bool voteDecision
-    )
-        external
-        onlyMemberInspector(msg.sender)
-        onlyActiveProposals(proposalIndex)
-        onlyFirstVote(proposalIndex, msg.sender)
-    {
+    ) external onlyMemberInspector(msg.sender) {
+        if (proposals[proposalIndex].voters[msg.sender]) {
+            revert OperationCenter__YouHaveAlreadyVoted();
+        }
+        if (block.timestamp > proposals[proposalIndex].deadline) {
+            revert OperationCenter__DeadlineExceeded();
+        }
         if (voteDecision) {
             proposals[proposalIndex].forVotes++;
         } else {
             proposals[proposalIndex].againstVotes++;
         }
+        proposals[proposalIndex].voters[msg.sender] = true;
         emit Vote(proposalIndex, voteDecision, msg.sender);
     }
 
     function executeProposal(
-        uint256 proposalIndex
-    ) external onlyMemberInspector(msg.sender) onlyExpiredAndNotExecutedProposals(proposalIndex) {
-        address producer = proposals[proposalIndex].producer;
-        uint256 protocolId = proposals[proposalIndex].protocolId;
+        uint256 proposalIndex,
+        uint256 creditAmount
+    ) external onlyMemberInspector(msg.sender) {
+        Proposal storage proposal = proposals[proposalIndex];
+        if (proposal.deadline == 0) {
+            revert OperationCenter__ProposalDoesNotExist();
+        }
+        if (block.timestamp < proposal.deadline) {
+            revert OperationCenter__DeadlineHasNotExceeded();
+        }
+        if (proposal.executed) {
+            revert OperationCenter__ProposalAlreadyExecuted();
+        }
+        address producer = proposal.producer;
+        uint256 protocolId = proposal.protocolId;
         // we are resetting the value of this mapping bcs later the same producer can request for the same protocol
         producerContractInstance.setRequestedProtocolsByProducersMapping(
             producer,
             protocolId,
             false
         );
-        if (proposals[proposalIndex].forVotes > proposals[proposalIndex].againstVotes) {
-            proposals[proposalIndex].executed = true;
-            proposals[proposalIndex].passedVoting = true;
+        if (proposal.forVotes > proposal.againstVotes) {
+            proposal.executed = true;
+            proposal.passedVoting = true;
             // send some credit token to the producer
-            uint256 approximateCreditAmount = (proposals[proposalIndex]
-                .avgTokenPriceOfCapacityCommitment * TOKEN_CREDIT_PERCENTAGE) / 100;
-            _creditHarvestToken(approximateCreditAmount, producer);
+            _creditHarvestToken(creditAmount, producer);
         } else {
             revert OperationCenter__ProposalDidntPass();
         }
@@ -220,7 +193,7 @@ contract OperationCenter is Auth {
     }
 
     function withdrawHarvestToken(uint256 amount) external onlyOwner onlySufficientBalance(amount) {
-        token.transferFrom(address(this), msg.sender, amount);
+        token.transfer(msg.sender, amount);
 
         emit TokenTransferred(address(this), msg.sender, amount);
     }
@@ -242,7 +215,7 @@ contract OperationCenter is Auth {
         address producer
     ) private onlySufficientBalance(amount) {
         creditedTokens[producer] = amount;
-        token.transferFrom(address(this), producer, amount);
+        token.transfer(producer, amount);
 
         emit TokenTransferred(address(this), producer, amount);
     }
@@ -260,26 +233,23 @@ contract OperationCenter is Auth {
         } else {
             // if producerShare > creditedTokens[producer]
             uint256 paymentAmount = producerShare - creditedTokens[producer];
-            token.transferFrom(address(this), producer, paymentAmount);
+            token.transfer(producer, paymentAmount);
             delete creditedTokens[producer];
         }
     }
 
     /* Functions will be called from InspectorContract */
-    function _getAvgTokenPriceOfCapacityCommitment(uint256 index) public view returns (uint256) {
-        return proposals[index].avgTokenPriceOfCapacityCommitment;
-    }
-
     function _assignInspectorToProposal(
         uint256 proposalIndex,
         address inspector,
         uint256 amount
-    )
-        external
-        onlyRole(UserRole.Inspector)
-        onlyProposalWhichInspectorNotAssigned(proposalIndex)
-        onlyPassedProposals(proposalIndex)
-    {
+    ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
+        if (proposals[proposalIndex].passedVoting == false) {
+            revert OperationCenter__ProposalDidntPassedYet();
+        }
+        if (proposals[proposalIndex].inspector != address(0)) {
+            revert OperationCenter__InspectorAlreadyAssigned();
+        }
         proposals[proposalIndex].inspector = inspector;
         guaranteedAmountsOfInspectors[inspector][proposalIndex] = amount;
     }
@@ -289,14 +259,17 @@ contract OperationCenter is Auth {
         uint256 proposalIndex,
         bool passedOrNot,
         uint256 inspectorFee
-    ) external onlyRole(UserRole.Inspector) onlyAssignedInspector(inspector, proposalIndex) {
+    ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
+        if (proposals[proposalIndex].inspector != inspector) {
+            revert OperationCenter__YouAreNotTheInspectorOfThisProposal();
+        }
         proposals[proposalIndex].passedInspection = passedOrNot;
         if (passedOrNot) {
             // send the taken guaranteed token amount from inspector back to the inspector
             // Also adds the comission of inspector
             uint256 amount = (guaranteedAmountsOfInspectors[inspector][proposalIndex] *
                 (100 + inspectorFee)) / 100;
-            token.transferFrom(address(this), inspector, amount);
+            token.transfer(inspector, amount);
             guaranteedAmountsOfInspectors[inspector][proposalIndex] = 0;
         }
     }

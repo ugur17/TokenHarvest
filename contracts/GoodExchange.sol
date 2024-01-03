@@ -5,8 +5,6 @@ import "./NFTHarvest.sol";
 import "./HarvestToken.sol";
 import "./OperationCenter.sol";
 
-import "./Auth.sol";
-
 /* Errors */
 error GoodExchange__ProductNotCertified();
 error GoodExchange__InsufficientFunds();
@@ -19,7 +17,7 @@ error GoodExchange__ZeroIsIdOfFungibleToken();
 error GoodExchange__MarketPlaceNotApprovedBySeller();
 error GoodExchange__MarketPlaceNotApprovedByBuyer();
 
-contract GoodExchange is Auth {
+contract GoodExchange {
     /* Type declarations */
     struct Listing {
         address producer;
@@ -100,7 +98,7 @@ contract GoodExchange is Auth {
         uint256 amount
     ) {
         if (nftContract.getBalanceOf(owner, tokenId) < amount) {
-            revert TokenHarvest__NotEnoughToken();
+            revert NFTHarvest__NotEnoughToken();
         }
         _;
     }

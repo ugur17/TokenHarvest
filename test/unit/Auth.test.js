@@ -25,6 +25,9 @@ const { developmentChains } = require("../../helper-hardhat-config")
             it("checks the validity of input parameters", async () => {
                 await expect(authContract.register("", "jieun@hotmail.com", 0)).to.be.revertedWithCustomError(authContract, "Auth__InvalidNameOrEmail()");
                 await expect(authContract.register("jieun", "", 0)).to.be.revertedWithCustomError(authContract, "Auth__InvalidNameOrEmail()");
+            }),
+            it("emits the registered event", async () => {
+                await expect(authContract.register("jieun", "jieun@hotmail.com", 0)).to.emit(authContract, "UserRegistered").withArgs(deployer.address, "jieun", "jieun@hotmail.com", 0);
             })
         })
     })

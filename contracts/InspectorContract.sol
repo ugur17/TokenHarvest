@@ -47,22 +47,27 @@ contract InspectorContract is ProducerContract {
     constructor(
         address daoAddress,
         address nftContractAddress,
-        address harvestTokenContractAddress
-    ) ProducerContract(nftContractAddress, harvestTokenContractAddress) {
+        address harvestTokenContractAddress,
+        address authAddress
+    ) ProducerContract(nftContractAddress, harvestTokenContractAddress, authAddress) {
         dao = OperationCenter(daoAddress);
     }
 
     /* Functions */
     function acceptCertificationRequest(
         uint256 tokenId
-    ) external onlyRole(UserRole.Inspector) onlySentCertificationRequests(tokenId) {
+    ) external onlyRole(Auth.UserRole.Inspector) onlySentCertificationRequests(tokenId) {
         certificationRequests[tokenId].inspector = msg.sender;
         emit CertificationRequestAccepted(tokenId, msg.sender);
     }
 
     function approveCertification(
         uint256 tokenId
-    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequestsByInspector(tokenId) {
+    )
+        external
+        onlyRole(Auth.UserRole.Inspector)
+        onlyAcceptedCertificationRequestsByInspector(tokenId)
+    {
         delete certificationRequests[tokenId];
         nftContract.certifyNft(tokenId);
         emit CertificationApproved(tokenId, msg.sender);
@@ -70,13 +75,13 @@ contract InspectorContract is ProducerContract {
 
     function rejectCertification(
         uint256 tokenId
-    ) external onlyRole(UserRole.Inspector) onlyAcceptedCertificationRequests(tokenId) {
+    ) external onlyRole(Auth.UserRole.Inspector) onlyAcceptedCertificationRequests(tokenId) {
         delete certificationRequests[tokenId];
         emit CertificationRejected(tokenId, msg.sender);
     }
 
-    function assignInspectorToProposal(uint256 proposalIndex) external {
-        uint256 guaranteedAmount = dao._getAvgTokenPriceOfCapacityCommitment(proposalIndex);
+    function assignInspectorToProposal(uint256 proposalIndex, uint256 guaranteedAmount) external {
+        // uint256 guaranteedAmount = dao._getAvgTokenPriceOfCapacityCommitment(proposalIndex);
         dao._assignInspectorToProposal(proposalIndex, msg.sender, guaranteedAmount);
         // send some guaranteed token to the treasury
         _sendGuaranteedAmount(guaranteedAmount);

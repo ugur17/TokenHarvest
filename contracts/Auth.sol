@@ -72,7 +72,19 @@ contract Auth is Ownable {
         emit UserRegistered(msg.sender, _username, email, _role);
     }
 
+    function getUser(address userAddress) external view returns (User memory) {
+        return users[userAddress];
+    }
+
     function checkRole(address currentUser) external view returns (UserRole) {
         return users[currentUser].role;
+    }
+
+    function isRegistered(address userAddress) external view returns (bool) {
+        return users[userAddress].registered;
+    }
+
+    function getOnlyRole(address userAddress, UserRole role) external view returns (bool) {
+        return (users[userAddress].role == role);
     }
 }

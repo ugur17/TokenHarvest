@@ -8,6 +8,9 @@ module.exports = async function ({getNamedAccounts, deployments}) {
 
     args = [];
 
+    const auth = await deployments.get('Auth');
+    args.push(auth.address);
+
     const nftHarvest = await deploy("NFTHarvest", {
         from: deployer,
         args: args,

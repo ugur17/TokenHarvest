@@ -10,8 +10,9 @@ import "./Auth.sol";
 error ProducerContract__ProductAlreadyCertified();
 error ProducerContract__CertificationRequestAlreadySent();
 error ProducerContract__TokenDoesNotExist();
+error ProducerContract__InsufficientRole();
 
-contract ProducerContract is Auth {
+contract ProducerContract {
     struct CertificationRequest {
         address producer;
         address inspector;
@@ -19,6 +20,7 @@ contract ProducerContract is Auth {
 
     NFTHarvest nftContract;
     HarvestToken token;
+    Auth auth;
 
     // token id => CertificationRequest instance
     mapping(uint256 => CertificationRequest) public certificationRequests;
@@ -46,16 +48,28 @@ contract ProducerContract is Auth {
         _;
     }
 
-    constructor(address nftContractAddress, address harvestTokenContractAddress) {
+    modifier onlyRole(Auth.UserRole role) {
+        if (auth.getOnlyRole(msg.sender, role) == false || auth.isRegistered(msg.sender) == false) {
+            revert ProducerContract__InsufficientRole();
+        }
+        _;
+    }
+
+    constructor(
+        address nftContractAddress,
+        address harvestTokenContractAddress,
+        address authAddress
+    ) {
         nftContract = NFTHarvest(nftContractAddress);
         token = HarvestToken(harvestTokenContractAddress);
+        auth = Auth(authAddress);
     }
 
     function requestCertification(
         uint256 tokenId
     )
         external
-        onlyRole(UserRole.Producer)
+        onlyRole(Auth.UserRole.Producer)
         onlyTokenExists(tokenId)
         onlyNotCertifiedOrNotRequested(tokenId)
     {
@@ -65,7 +79,7 @@ contract ProducerContract is Auth {
         emit CertificationRequested(tokenId, msg.sender);
     }
 
-    function requestProtocolWithDao(uint256 protocolId) external onlyRole(UserRole.Producer) {
+    function requestProtocolWithDao(uint256 protocolId) external onlyRole(Auth.UserRole.Producer) {
         requestedProtocolsByProducers[msg.sender][protocolId] = true;
         emit ProtocolRequested(protocolId, msg.sender);
     }

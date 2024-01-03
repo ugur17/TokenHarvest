@@ -2,29 +2,26 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-// import "@openzeppelin/contracts/access/Ownable.sol";
-// I will care with the admin account after i've completed other tasks
+
 import "./ToString.sol";
 import "base64-sol/base64.sol";
 
 import "./Auth.sol";
 
-error TokenHarvest__NotOwner();
-error TokenHarvest__NotEnoguhSupply();
-error TokenHarvest__ExceedsTheSupplyLimit();
-error TokenHarvest__NotEnoughToken();
-error TokenHarvest__TokenDoesNotExist();
-error TokenHarvest__InvalidParameters();
-error TokenHarvest__ThisTokenIsNotNft();
-error NFTHarvest__YouDidntAcceptAnyRequestWithThisTokenId();
+error NFTHarvest__NotEnoughToken();
+error NFTHarvest__TokenDoesNotExist();
+error NFTHarvest__InvalidParameters();
+error NFTHarvest__InsufficientRole();
 
-contract NFTHarvest is ERC1155, Auth {
+contract NFTHarvest is ERC1155 {
     /* Type Declarations */
     struct NftMetadata {
         string name;
         uint256 productAmountOfEachToken;
         bool isCertified;
     }
+
+    Auth auth;
 
     /* Non-Fungible Token State Variables */
     uint256 private s_nftCounter;
@@ -51,21 +48,14 @@ contract NFTHarvest is ERC1155, Auth {
         uint256 amount
     ) {
         if (balanceOf(owner, tokenId) < amount) {
-            revert TokenHarvest__NotEnoughToken();
+            revert NFTHarvest__NotEnoughToken();
         }
         _;
     }
 
     modifier onlyExists(uint256 tokenId) {
         if (bytes(s_nftMetadatas[tokenId].name).length == 0) {
-            revert TokenHarvest__TokenDoesNotExist();
-        }
-        _;
-    }
-
-    modifier onlyNft(uint256 tokenId) {
-        if (tokenId == 0) {
-            revert TokenHarvest__ThisTokenIsNotNft();
+            revert NFTHarvest__TokenDoesNotExist();
         }
         _;
     }
@@ -76,19 +66,25 @@ contract NFTHarvest is ERC1155, Auth {
         uint256 productAmountOfEachToken
     ) {
         if (bytes(name).length == 0 || amount <= 0 || productAmountOfEachToken <= 0) {
-            revert TokenHarvest__InvalidParameters();
+            revert NFTHarvest__InvalidParameters();
         }
         _;
     }
 
-    constructor() ERC1155(BASE_URI) {
-        s_nftCounter = 1; // NFT id counter starts from 1, because id of fungible token is 0
+    modifier onlyRole(Auth.UserRole role) {
+        if (auth.getOnlyRole(msg.sender, role) == false || auth.isRegistered(msg.sender) == false) {
+            revert NFTHarvest__InsufficientRole();
+        }
+        _;
+    }
+
+    constructor(address authAddress) ERC1155(BASE_URI) {
+        s_nftCounter = 0; // NFT id counter starts from 1, because id of fungible token is 0
+        auth = Auth(authAddress);
     }
 
     /* Functions */
-    function uri(
-        uint256 tokenId
-    ) public view override onlyExists(tokenId) onlyNft(tokenId) returns (string memory) {
+    function uri(uint256 tokenId) public view override onlyExists(tokenId) returns (string memory) {
         return
             string(
                 abi.encodePacked(
@@ -116,7 +112,7 @@ contract NFTHarvest is ERC1155, Auth {
         uint256 productAmountOfEachToken
     )
         external
-        onlyRole(UserRole.Producer)
+        onlyRole(Auth.UserRole.Producer)
         onlyValidParameters(name, amount, productAmountOfEachToken)
     {
         uint256 tokenId = s_nftCounter;
@@ -132,8 +128,7 @@ contract NFTHarvest is ERC1155, Auth {
         uint256 amount
     )
         external
-        onlyNft(tokenId)
-        onlyRole(UserRole.Producer)
+        onlyRole(Auth.UserRole.Producer)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
     {
         _burn(msg.sender, tokenId, amount);
