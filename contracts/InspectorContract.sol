@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import "./OperationCenter.sol";
 import "./ProducerContract.sol";
+import "./Auth.sol";
+import "./NFTHarvest.sol";
+import "./HarvestToken.sol";
 
 /* Errors */
 error InspectorContract__InspectionRequestNotFound();
@@ -12,8 +15,12 @@ error InspectorContract__ProposalDidntPassedYet();
 error InspectorContract__InspectorAlreadyAssigned();
 error InspectorContract__YouAreNotTheInspectorOfThisProposal();
 
-contract InspectorContract is ProducerContract {
+contract InspectorContract {
     OperationCenter public dao;
+    Auth public auth;
+    ProducerContract public producerContract;
+    NFTHarvest public nftContract;
+    HarvestToken public token;
 
     uint256 constant INSPECTOR_FEE = 2;
     /* Events */
@@ -24,22 +31,22 @@ contract InspectorContract is ProducerContract {
 
     /* Modifiers */
     modifier onlySentCertificationRequests(uint256 tokenId) {
-        if (certificationRequests[tokenId].producer == address(0)) {
+        if (producerContract.getCertificationRequestProducer(tokenId) == address(0)) {
             revert InspectorContract__InspectionRequestNotFound();
         }
         _;
     }
 
     modifier onlyAcceptedCertificationRequests(uint256 tokenId) {
-        if (certificationRequests[tokenId].inspector != msg.sender) {
+        if (producerContract.getCertificationRequestInspector(tokenId) != msg.sender) {
             revert InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
         }
         _;
     }
 
-    modifier onlyAcceptedCertificationRequestsByInspector(uint256 tokenId) {
-        if (certificationRequests[tokenId].inspector != msg.sender) {
-            revert InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
+    modifier onlyRole(address user, Auth.UserRole role) {
+        if (auth.getOnlyRole(user, role) == false || auth.isRegistered(user) == false) {
+            revert OperationCenter__InsufficientRole();
         }
         _;
     }
@@ -48,16 +55,25 @@ contract InspectorContract is ProducerContract {
         address daoAddress,
         address nftContractAddress,
         address harvestTokenContractAddress,
-        address authAddress
-    ) ProducerContract(nftContractAddress, harvestTokenContractAddress, authAddress) {
+        address authAddress,
+        address producerContractAddress
+    ) {
         dao = OperationCenter(daoAddress);
+        nftContract = NFTHarvest(nftContractAddress);
+        token = HarvestToken(harvestTokenContractAddress);
+        auth = Auth(authAddress);
+        producerContract = ProducerContract(producerContractAddress);
     }
 
     /* Functions */
     function acceptCertificationRequest(
         uint256 tokenId
-    ) external onlyRole(Auth.UserRole.Inspector) onlySentCertificationRequests(tokenId) {
-        certificationRequests[tokenId].inspector = msg.sender;
+    )
+        external
+        onlyRole(msg.sender, Auth.UserRole.Inspector)
+        onlySentCertificationRequests(tokenId)
+    {
+        producerContract.setCertificationRequestInspector(tokenId, msg.sender);
         emit CertificationRequestAccepted(tokenId, msg.sender);
     }
 
@@ -65,22 +81,29 @@ contract InspectorContract is ProducerContract {
         uint256 tokenId
     )
         external
-        onlyRole(Auth.UserRole.Inspector)
-        onlyAcceptedCertificationRequestsByInspector(tokenId)
+        onlyRole(msg.sender, Auth.UserRole.Inspector)
+        onlyAcceptedCertificationRequests(tokenId)
     {
-        delete certificationRequests[tokenId];
+        producerContract.deleteCertificationRequest(tokenId);
         nftContract.certifyNft(tokenId);
         emit CertificationApproved(tokenId, msg.sender);
     }
 
     function rejectCertification(
         uint256 tokenId
-    ) external onlyRole(Auth.UserRole.Inspector) onlyAcceptedCertificationRequests(tokenId) {
-        delete certificationRequests[tokenId];
+    )
+        external
+        onlyRole(msg.sender, Auth.UserRole.Inspector)
+        onlyAcceptedCertificationRequests(tokenId)
+    {
+        producerContract.deleteCertificationRequest(tokenId);
         emit CertificationRejected(tokenId, msg.sender);
     }
 
-    function assignInspectorToProposal(uint256 proposalIndex, uint256 guaranteedAmount) external {
+    function assignInspectorToProposal(
+        uint256 proposalIndex,
+        uint256 guaranteedAmount
+    ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
         // uint256 guaranteedAmount = dao._getAvgTokenPriceOfCapacityCommitment(proposalIndex);
         dao._assignInspectorToProposal(proposalIndex, msg.sender, guaranteedAmount);
         // send some guaranteed token to the treasury

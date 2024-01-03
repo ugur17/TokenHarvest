@@ -94,6 +94,18 @@ contract ProducerContract {
         requestedProtocolsByProducers[producer][protocolId] = isRequested;
     }
 
+    function setCertificationRequestProducer(uint256 tokenId, address producer) external {
+        certificationRequests[tokenId].producer = producer;
+    }
+
+    function setCertificationRequestInspector(uint256 tokenId, address inspector) external {
+        certificationRequests[tokenId].inspector = inspector;
+    }
+
+    function deleteCertificationRequest(uint256 tokenId) external {
+        delete certificationRequests[tokenId];
+    }
+
     // Getter Functions
     // This function will be called inside of OperationCenter by DAO
     function getRequestedProtocolsByProducersMapping(
@@ -104,6 +116,14 @@ contract ProducerContract {
     }
 
     function getInspectorOfCertificationRequest(uint256 tokenId) public view returns (address) {
+        return certificationRequests[tokenId].inspector;
+    }
+
+    function getCertificationRequestProducer(uint256 tokenId) external view returns (address) {
+        return certificationRequests[tokenId].producer;
+    }
+
+    function getCertificationRequestInspector(uint256 tokenId) external view returns (address) {
         return certificationRequests[tokenId].inspector;
     }
 }

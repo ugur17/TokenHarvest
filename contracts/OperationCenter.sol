@@ -19,7 +19,6 @@ error OperationCenter__FailedToWithdrawEthers();
 error OperationCenter__NotSufficientBalance();
 error OperationCenter__InvalidProducerAddress();
 error OperationCenter__InspectorAlreadyAssigned();
-error OperationCenter__ProposalDidntPassedYet();
 error OperationCenter__YouAreNotTheInspectorOfThisProposal();
 error OperationCenter__InsufficientRole();
 error OperationCenter__ProposalDoesNotExist();
@@ -46,7 +45,7 @@ contract OperationCenter is Ownable {
     HarvestToken public token;
     Auth public auth;
 
-    uint256 constant TOTAL_PRODUCER_FEE_PERCENTAGE = 20;
+    uint256 public constant TOTAL_PRODUCER_FEE_PERCENTAGE = 20;
 
     // (inspector address => (proposal index => amount)) of guaranteed amount taken from inspector
     mapping(address => mapping(uint256 => uint256)) public guaranteedAmountsOfInspectors;
@@ -225,7 +224,7 @@ contract OperationCenter is Ownable {
         uint256 feeAmount = (TOTAL_PRODUCER_FEE_PERCENTAGE * totalPrice) / 100;
         uint256 producerShare = totalPrice - feeAmount;
         if (producerShare < creditedTokens[producer]) {
-            creditedTokens[producer] -= totalPrice;
+            creditedTokens[producer] -= producerShare;
             return;
         } else if (producerShare == creditedTokens[producer]) {
             delete creditedTokens[producer];
@@ -245,7 +244,7 @@ contract OperationCenter is Ownable {
         uint256 amount
     ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
         if (proposals[proposalIndex].passedVoting == false) {
-            revert OperationCenter__ProposalDidntPassedYet();
+            revert OperationCenter__ProposalDidntPass();
         }
         if (proposals[proposalIndex].inspector != address(0)) {
             revert OperationCenter__InspectorAlreadyAssigned();
@@ -267,8 +266,8 @@ contract OperationCenter is Ownable {
         if (passedOrNot) {
             // send the taken guaranteed token amount from inspector back to the inspector
             // Also adds the comission of inspector
-            uint256 amount = (guaranteedAmountsOfInspectors[inspector][proposalIndex] *
-                (100 + inspectorFee)) / 100;
+            uint256 amount = guaranteedAmountsOfInspectors[inspector][proposalIndex] + inspectorFee;
+            delete guaranteedAmountsOfInspectors[inspector][proposalIndex];
             token.transfer(inspector, amount);
             guaranteedAmountsOfInspectors[inspector][proposalIndex] = 0;
         }

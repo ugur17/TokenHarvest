@@ -12,6 +12,8 @@ const { developmentChains } = require("../../helper-hardhat-config")
         const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
         // this is the token credit amount which will be credited to the producer after proposal passed and executed
         const CREDIT_AMOUNT = 10; 
+        // this is the fee amount which will be paid to the inspector 
+        const INSPECTOR_FEE = 5;
         beforeEach(async () => {
             accounts = await ethers.getSigners();
             deployer = accounts[0];
@@ -143,7 +145,6 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 await inspectorConnectedDao.createProposal(description, protocolId, producer);
                 await inspectorConnectedDao.vote(proposalIndex, true);
                 proposal = await inspectorConnectedDao.proposals(proposalIndex);
-                await harvestToken.transfer(dao.target, 100000);
             })
             it("only member of dao can execute the proposal", async () => {
                 const secondInspector = accounts[3];
@@ -159,6 +160,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__DeadlineHasNotExceeded()");               
             }),
             it("set requestedProtocolsByProducers after execute the proposal successfully", async () => {
+                await harvestToken.transfer(dao.target, 100000);
                 await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
                 const beforeExecution = await producerConnectedProducerContract.getRequestedProtocolsByProducersMapping(producer.address, protocolId);
                 // const balance = await harvestToken.balanceOf(dao.target);
@@ -173,6 +175,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 assert.equal(afterExecution, false);
             }),
             it("check 'executed' and 'passedVoting parameters after execution' ", async () => {
+                await harvestToken.transfer(dao.target, 100000);
                 await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
                 await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
                 const proposalAfterExecution = await inspectorConnectedDao.proposals(proposalIndex);
@@ -180,13 +183,36 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 assert.equal(proposalAfterExecution.passedVoting, true);
             }),
             it("revert if proposal already executed", async () => {
+                await harvestToken.transfer(dao.target, 100000);
                 await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
                 await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
                 await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__ProposalAlreadyExecuted()");
             }),
             // test the creditHarvestToken() function implementations
-            describe("creditHarvestToken() function", () => {
-
+            describe("_creditHarvestToken() function", () => {
+                it("reverts if there is no sufficient balance", async () => {
+                    await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                    await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__NotSufficientBalance()");
+                }),
+                it("sets the creditedTokens mapping", async () => {
+                    await harvestToken.transfer(dao.target, 100000);
+                    await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                    await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+                    const creditedBalanceOfProducer = await inspectorConnectedDao.creditedTokens(producer.address);
+                    assert.equal(creditedBalanceOfProducer, CREDIT_AMOUNT);
+                }),
+                it("updates the balance of producer", async () => {
+                    await harvestToken.transfer(dao.target, 100000);
+                    await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                    await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+                    const balanceOfProducer = await harvestToken.balanceOf(producer.address);
+                    assert.equal(balanceOfProducer, CREDIT_AMOUNT);
+                }),
+                it("emits the event", async () => {
+                    await harvestToken.transfer(dao.target, 100000);
+                    await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                    await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.emit(inspectorConnectedDao, "TokenTransferred").withArgs(dao.target, producer.address, CREDIT_AMOUNT);
+                })
             }),
             it("revert if againstVotes > forVotes", async () => {
                 const startingIndex = 3; // deployer: 0 - inspector: 1 - producer: 2
@@ -203,8 +229,138 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__ProposalDidntPass()");
             }),
             it("emits the event", async () => {
+                await harvestToken.transfer(dao.target, 100000);
                 await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
                 await expect(inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT)).to.emit(inspectorConnectedDao, "ProposalExecuted").withArgs(proposalIndex);
+            })
+        }),
+        describe("_handlePurchase() function", () => {
+            beforeEach(async () => {
+                description = "abc";
+                protocolId = 6;
+                proposalIndex = 0;
+                await dao.addMemberOfDao(inspector.address);
+                await producerConnectedProducerContract.requestProtocolWithDao(protocolId);
+                await inspectorConnectedDao.createProposal(description, protocolId, producer);
+                await inspectorConnectedDao.vote(proposalIndex, true);
+                await harvestToken.transfer(dao.target, 100000);
+                await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+            })
+            it("producerShare < creditedTokens[producer]", async () => {
+                const totalPriceParam = CREDIT_AMOUNT - 3;
+                const total_producer_fee_percentage = await inspectorConnectedDao.TOTAL_PRODUCER_FEE_PERCENTAGE();
+                const feeAmount = Math.floor((Number(total_producer_fee_percentage) * totalPriceParam) / 100);
+                const producerShare = totalPriceParam - feeAmount;
+                // console.log(totalPriceParam);
+                // console.log(total_producer_fee_percentage);
+                // console.log(feeAmount);
+                // console.log(producerShare);
+                const beforeCreditedBalance = await inspectorConnectedDao.creditedTokens(producer.address);
+                await inspectorConnectedDao._handlePurchase(producer.address, totalPriceParam);
+                const afterCreditedBalance = await inspectorConnectedDao.creditedTokens(producer.address);
+                assert.equal(Number(afterCreditedBalance), Number(beforeCreditedBalance) - producerShare);
+            }),
+            it("producerShare == creditedTokens[producer]", async () => {
+                const totalPriceParam = CREDIT_AMOUNT + 2; // calculated to make producer share equal to the credited amount
+                const total_producer_fee_percentage = await inspectorConnectedDao.TOTAL_PRODUCER_FEE_PERCENTAGE();
+                const feeAmount = Math.floor((Number(total_producer_fee_percentage) * totalPriceParam) / 100);
+                const producerShare = totalPriceParam - feeAmount;
+                // console.log(totalPriceParam);
+                // console.log(total_producer_fee_percentage);
+                // console.log(feeAmount);
+                // console.log(producerShare);
+                await inspectorConnectedDao._handlePurchase(producer.address, totalPriceParam);
+                const afterCreditedBalance = await inspectorConnectedDao.creditedTokens(producer.address);
+                assert.equal(Number(afterCreditedBalance), 0);
+            }),
+            it("producerShare > creditedTokens[producer]", async () => {
+                const totalPriceParam = CREDIT_AMOUNT + 12; // calculated to make producer share equal to the credited amount
+                const total_producer_fee_percentage = await inspectorConnectedDao.TOTAL_PRODUCER_FEE_PERCENTAGE();
+                const feeAmount = Math.floor((Number(total_producer_fee_percentage) * totalPriceParam) / 100);
+                const producerShare = totalPriceParam - feeAmount;
+                const beforeCreditedBalance = await inspectorConnectedDao.creditedTokens(producer.address);
+                await inspectorConnectedDao._handlePurchase(producer.address, totalPriceParam);
+                const afterCreditedBalance = await inspectorConnectedDao.creditedTokens(producer.address);
+                const tokenSentToProducer = producerShare - Number(beforeCreditedBalance);
+                const totalSentAmount = tokenSentToProducer + CREDIT_AMOUNT;
+                const balanceOfProducer = await harvestToken.balanceOf(producer.address);
+                assert.equal(Number(afterCreditedBalance), 0);
+                assert.equal(totalSentAmount, balanceOfProducer);
+            })
+        }),
+        describe("_assignInspectorToProposal()", () => {
+            beforeEach(async () => {
+                description = "abc";
+                protocolId = 6;
+                proposalIndex = 0;
+                await dao.addMemberOfDao(inspector.address);
+                await producerConnectedProducerContract.requestProtocolWithDao(protocolId);
+                await inspectorConnectedDao.createProposal(description, protocolId, producer);
+                await inspectorConnectedDao.vote(proposalIndex, true);
+                await harvestToken.transfer(dao.target, 100000);
+                await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+            }),
+            it("only inspector can call this function", async () => {
+                await expect(dao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(dao, "OperationCenter__InsufficientRole()");
+            }),
+            it("revert if proposal didnt pass yet", async () => {
+                await expect(inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__ProposalDidntPass()");
+            }),
+            it("execute function successfully", async () => {
+                await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+                await inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT);
+                const proposal = await inspectorConnectedDao.proposals(proposalIndex);
+                const guaranteedAmountSentByInspector = await inspectorConnectedDao.guaranteedAmountsOfInspectors(inspector.address, proposalIndex);
+                assert.equal(proposal.inspector, inspector.address);
+                assert.equal(guaranteedAmountSentByInspector, CREDIT_AMOUNT);
+            })
+            it("revert if inspector already assigned", async () => {
+                await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+                await inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT);
+                await expect(inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__InspectorAlreadyAssigned()");
+            })
+        }),
+        describe("_setPassedInspection", () => {
+            beforeEach(async () => {
+                description = "abc";
+                protocolId = 6;
+                proposalIndex = 0;
+                await dao.addMemberOfDao(inspector.address);
+                await producerConnectedProducerContract.requestProtocolWithDao(protocolId);
+                await inspectorConnectedDao.createProposal(description, protocolId, producer);
+                await inspectorConnectedDao.vote(proposalIndex, true);
+                await harvestToken.transfer(dao.target, 100000);
+                await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
+                await inspectorConnectedDao.executeProposal(proposalIndex, CREDIT_AMOUNT);
+            }),
+            it("revert if the inspector is not assigned to the current proposal", async () => {
+                await expect(inspectorConnectedDao._setPassedInspection(inspector.address, proposalIndex, true, INSPECTOR_FEE)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__YouAreNotTheInspectorOfThisProposal()");
+            }),
+            it("execute function correctly (inspection not passed)", async () => {
+                await inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT);
+                await inspectorConnectedDao._setPassedInspection(inspector.address, proposalIndex, false, INSPECTOR_FEE);
+                const proposal = await inspectorConnectedDao.proposals(proposalIndex);
+                assert.equal(proposal.passedInspection, false);
+            }),
+            it("execute function correctly (inspection passed)", async () => {
+                await inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT);
+                const prevInspectorBalance = await harvestToken.balanceOf(inspector.address);
+                const guaranteedAmountSentByInspector = await inspectorConnectedDao.guaranteedAmountsOfInspectors(inspector.address, proposalIndex);
+                await inspectorConnectedDao._setPassedInspection(inspector.address, proposalIndex, true, INSPECTOR_FEE);
+                const afterInspectorBalance = await harvestToken.balanceOf(inspector.address);
+                const proposal = await inspectorConnectedDao.proposals(proposalIndex);
+                assert.equal(proposal.passedInspection, true);
+                assert.equal(Number(afterInspectorBalance) - Number(prevInspectorBalance), Number(guaranteedAmountSentByInspector) + INSPECTOR_FEE);
+            })
+        }),
+        describe("withdrawHarvestToken", () => {
+            beforeEach(async () => {
+                await harvestToken.transfer(dao.target, 100000);
+            })
+            it("emits the event", async () => {
+                const amount = 500;
+                await expect(dao.withdrawHarvestToken(amount)).to.emit(dao, "TokenTransferred").withArgs(dao.target, deployer.address, amount);
             })
         })
     })
