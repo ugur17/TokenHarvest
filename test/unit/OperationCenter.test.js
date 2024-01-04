@@ -7,7 +7,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
     : describe("OperationCenter Contract Unit Tests", function () {
         let accounts, deployer, inspector, producer;
         let dao, auth, harvestToken;
-        let inspectorConnectedAuth, producerConnectedAuth, inspectorConnectedDao;
+        let inspectorConnectedAuth, producerConnectedAuth, inspectorConnectedDao, producerConnectedProducerContract;
         let description, protocolId, proposalIndex;
         const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
         // this is the token credit amount which will be credited to the producer after proposal passed and executed
@@ -301,8 +301,8 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 await harvestToken.transfer(dao.target, 100000);
                 await network.provider.send("evm_increaseTime", [Number(proposal.deadline) + 1]);
             }),
-            it("only inspector can call this function", async () => {
-                await expect(dao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(dao, "OperationCenter__InsufficientRole()");
+            it("inspector param should be registered as inspector", async () => {
+                await expect(dao._assignInspectorToProposal(proposalIndex, producer.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(dao, "OperationCenter__InsufficientRole()");
             }),
             it("revert if proposal didnt pass yet", async () => {
                 await expect(inspectorConnectedDao._assignInspectorToProposal(proposalIndex, inspector.address, CREDIT_AMOUNT)).to.be.revertedWithCustomError(inspectorConnectedDao, "OperationCenter__ProposalDidntPass()");

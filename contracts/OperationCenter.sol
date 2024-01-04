@@ -242,7 +242,7 @@ contract OperationCenter is Ownable {
         uint256 proposalIndex,
         address inspector,
         uint256 amount
-    ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
+    ) external onlyRole(inspector, Auth.UserRole.Inspector) {
         if (proposals[proposalIndex].passedVoting == false) {
             revert OperationCenter__ProposalDidntPass();
         }
@@ -258,7 +258,7 @@ contract OperationCenter is Ownable {
         uint256 proposalIndex,
         bool passedOrNot,
         uint256 inspectorFee
-    ) external onlyRole(msg.sender, Auth.UserRole.Inspector) {
+    ) external onlyRole(inspector, Auth.UserRole.Inspector) {
         if (proposals[proposalIndex].inspector != inspector) {
             revert OperationCenter__YouAreNotTheInspectorOfThisProposal();
         }

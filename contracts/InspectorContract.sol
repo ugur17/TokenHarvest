@@ -10,10 +10,7 @@ import "./HarvestToken.sol";
 /* Errors */
 error InspectorContract__InspectionRequestNotFound();
 error InspectorContract__YouDidntAcceptAnyRequestWithThisTokenId();
-error InspectorContract__InspectorDidntRequested();
-error InspectorContract__ProposalDidntPassedYet();
-error InspectorContract__InspectorAlreadyAssigned();
-error InspectorContract__YouAreNotTheInspectorOfThisProposal();
+error InspectorContract__InsufficientRole();
 
 contract InspectorContract {
     OperationCenter public dao;
@@ -22,7 +19,7 @@ contract InspectorContract {
     NFTHarvest public nftContract;
     HarvestToken public token;
 
-    uint256 constant INSPECTOR_FEE = 2;
+    uint256 public constant INSPECTOR_FEE = 2;
     /* Events */
     event CertificationRequestAccepted(uint256 indexed tokenId, address indexed inspector);
     event CertificationApproved(uint256 indexed tokenId, address indexed inspector);
@@ -46,7 +43,7 @@ contract InspectorContract {
 
     modifier onlyRole(address user, Auth.UserRole role) {
         if (auth.getOnlyRole(user, role) == false || auth.isRegistered(user) == false) {
-            revert OperationCenter__InsufficientRole();
+            revert InspectorContract__InsufficientRole();
         }
         _;
     }
@@ -107,7 +104,7 @@ contract InspectorContract {
         // uint256 guaranteedAmount = dao._getAvgTokenPriceOfCapacityCommitment(proposalIndex);
         dao._assignInspectorToProposal(proposalIndex, msg.sender, guaranteedAmount);
         // send some guaranteed token to the treasury
-        _sendGuaranteedAmount(guaranteedAmount);
+        _sendGuaranteedAmount(msg.sender, guaranteedAmount);
         emit ProcessInspectionAccepted(proposalIndex, msg.sender);
     }
 
@@ -115,7 +112,7 @@ contract InspectorContract {
         dao._setPassedInspection(msg.sender, proposalIndex, true, INSPECTOR_FEE);
     }
 
-    function _sendGuaranteedAmount(uint256 amount) private {
-        token.transfer(address(dao), amount);
+    function _sendGuaranteedAmount(address inspector, uint256 amount) public {
+        token.transferFrom(inspector, address(dao), amount);
     }
 }

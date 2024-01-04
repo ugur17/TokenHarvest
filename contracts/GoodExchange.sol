@@ -10,12 +10,13 @@ error GoodExchange__ProductNotCertified();
 error GoodExchange__InsufficientFunds();
 error GoodExchange__InvalidListingPrice();
 error GoodExchange__AlreadyListed();
-error GoodExchange__ProductNotListed();
+error GoodExchange__ProductNotListedByThisProducer();
 error GoodExchange__NotEnoughSupplyForSale();
 error GoodExchange__InvalidAmount();
 error GoodExchange__ZeroIsIdOfFungibleToken();
 error GoodExchange__MarketPlaceNotApprovedBySeller();
 error GoodExchange__MarketPlaceNotApprovedByBuyer();
+error GoodExchange__NotEnoughToken();
 
 contract GoodExchange {
     /* Type declarations */
@@ -30,7 +31,7 @@ contract GoodExchange {
     OperationCenter dao;
 
     /* State variables */
-    mapping(address => mapping(uint256 => Listing)) private listingByProducer; // producer => token id => Listing
+    mapping(address => mapping(uint256 => Listing)) public listingByProducer; // producer => token id => Listing
 
     /* Events */
     event ProductListed(
@@ -64,9 +65,9 @@ contract GoodExchange {
         _;
     }
 
-    modifier onlyListed(address account, uint256 tokenId) {
-        if (listingByProducer[account][tokenId].producer == address(0)) {
-            revert GoodExchange__ProductNotListed();
+    modifier onlyListedByProducer(address producer, uint256 tokenId) {
+        if (listingByProducer[producer][tokenId].producer != producer) {
+            revert GoodExchange__ProductNotListedByThisProducer();
         }
         _;
     }
@@ -98,7 +99,7 @@ contract GoodExchange {
         uint256 amount
     ) {
         if (nftContract.getBalanceOf(owner, tokenId) < amount) {
-            revert NFTHarvest__NotEnoughToken();
+            revert GoodExchange__NotEnoughToken();
         }
         _;
     }
@@ -141,13 +142,7 @@ contract GoodExchange {
         emit ProductListed(tokenId, msg.sender, amount, unitPrice);
     }
 
-    function cancelListing(
-        uint256 tokenId
-    )
-        external
-        onlyListed(msg.sender, tokenId)
-        onlyOwnerHasEnoughToken(msg.sender, tokenId, listingByProducer[msg.sender][tokenId].amount)
-    {
+    function cancelListing(uint256 tokenId) external onlyListedByProducer(msg.sender, tokenId) {
         delete listingByProducer[msg.sender][tokenId];
         emit ListingCancelled(tokenId, msg.sender);
     }
@@ -160,7 +155,7 @@ contract GoodExchange {
         external
         invalidPrice(unitPrice)
         invalidAmount(amount)
-        onlyListed(msg.sender, tokenId)
+        onlyListedByProducer(msg.sender, tokenId)
         onlyOwnerHasEnoughToken(msg.sender, tokenId, amount)
     {
         listingByProducer[msg.sender][tokenId].amount = amount;
@@ -168,12 +163,11 @@ contract GoodExchange {
         emit ListingUpdated(tokenId, msg.sender, amount, unitPrice);
     }
 
-    // Whole function will be updated
     function purchaseProduct(
         address producer,
         uint256 tokenId,
         uint256 amount
-    ) external invalidAmount(amount) onlyListed(producer, tokenId) {
+    ) external invalidAmount(amount) onlyListedByProducer(producer, tokenId) {
         Listing memory listing = listingByProducer[producer][tokenId];
         if (listing.amount < amount) {
             revert GoodExchange__NotEnoughSupplyForSale();
@@ -206,7 +200,7 @@ contract GoodExchange {
     function getListing(
         address producer,
         uint256 tokenId
-    ) external view onlyListed(producer, tokenId) returns (Listing memory) {
+    ) external view onlyListedByProducer(producer, tokenId) returns (Listing memory) {
         return listingByProducer[producer][tokenId];
     }
 }

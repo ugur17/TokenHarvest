@@ -26,7 +26,7 @@ contract NFTHarvest is ERC1155 {
     /* Non-Fungible Token State Variables */
     uint256 private s_nftCounter;
     string private constant BASE_URI = "data:application/json;base64,";
-    mapping(uint256 => NftMetadata) internal s_nftMetadatas; // id => NftMetadata
+    mapping(uint256 => NftMetadata) public s_nftMetadatas; // id => NftMetadata
 
     /* Events */
     event CreatedNFT(

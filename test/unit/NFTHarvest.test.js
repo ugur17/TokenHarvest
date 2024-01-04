@@ -80,5 +80,18 @@ const { developmentChains } = require("../../helper-hardhat-config")
                 const currentBalance = await nftHarvest.balanceOf(deployer.address, nextId);
                 assert((Number(prevBalance) == 5) && (Number(currentBalance) == 0));
             })
+        }),
+        describe("certifyNft()", () => {
+            let nextId;
+            beforeEach(async () => {
+                nextId = await nftHarvest.getNftCounter();
+                await auth.register("jieun", "jieun@hotmail.com", 0);
+                await nftHarvest.mintNFT(10, "cucumber", 5);
+            }),
+            it("execute function succesfully", async () => {
+                await nftHarvest.certifyNft(nextId);
+                const metadata = await nftHarvest.s_nftMetadatas(nextId);
+                assert.equal(metadata.isCertified, true);
+            })
         })
     })
