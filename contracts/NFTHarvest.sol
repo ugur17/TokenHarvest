@@ -106,6 +106,22 @@ contract NFTHarvest is ERC1155 {
             );
     }
 
+    function getUriString(uint256 tokenId) public view returns (string memory) {
+        return (
+            string(
+                abi.encodePacked(
+                    '{"Product Name":"',
+                    s_nftMetadatas[tokenId].name,
+                    '", "Product Amount of Each Token":"',
+                    ToString.toString(s_nftMetadatas[tokenId].productAmountOfEachToken),
+                    '", "Does Product Certified by Any Inspector?":"',
+                    ToString.convertBoolToString(s_nftMetadatas[tokenId].isCertified),
+                    '"}'
+                )
+            )
+        );
+    }
+
     function mintNFT(
         uint256 amount,
         string memory name,
